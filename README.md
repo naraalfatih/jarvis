@@ -15,6 +15,14 @@ and location permission there, whereas `file://` may re-prompt on every recognit
 Best in Chrome, Edge or Safari (they ship the Web Speech API). Firefox has no speech
 recognition — the on-screen command line and command chips work everywhere.
 
+## Deploy (Vercel)
+
+It is a static site — no build step. Import the repo at <https://vercel.com/new>, keep the
+framework preset **Other**, leave Build Command / Output Directory empty, and deploy.
+Or from a checkout: `npx vercel --prod`. `vercel.json` only adds response headers
+(microphone/geolocation allowed for the site itself). Vercel serves over HTTPS, which the
+Web Speech API and geolocation require to behave well.
+
 ## Voice commands
 
 Just say them (optionally prefixed with "Kestrel"), or type them:
