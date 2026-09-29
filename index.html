@@ -1,0 +1,1310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#01060a">
+<title>KESTREL — Holographic Tactical Interface</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Cpath d='M24 3 42 13.5v21L24 45 6 34.5v-21z' fill='%2302121a' stroke='%2319e3ff' stroke-width='3'/%3E%3Cpath d='M13 30 24 14l11 16' fill='none' stroke='%23ff8c1a' stroke-width='3'/%3E%3C/svg%3E">
+<style>
+:root{
+  --c1:25,227,255;          /* primary  (cyan)   — retinted by alert mode */
+  --c2:255,140,26;          /* secondary (amber) */
+  --ink:206,244,255;
+  --dim:112,168,190;
+  --mono:ui-monospace,"SF Mono","Cascadia Mono","Roboto Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --disp:"Bank Gothic","Eurostile","Agency FB","DIN Alternate","Segoe UI Semibold","Helvetica Neue","Arial Narrow",system-ui,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#01060a;color:rgb(var(--ink));font:12px/1.35 var(--mono);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent;user-select:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+input{font:inherit;color:inherit}
+
+/* ───────── backdrop ───────── */
+#bg{position:fixed;inset:0;background:
+  radial-gradient(58% 52% at 50% 44%,rgba(var(--c1),.14),transparent 72%),
+  radial-gradient(90% 60% at 50% 115%,rgba(var(--c2),.08),transparent 62%),
+  linear-gradient(#01060a,#020b12 55%,#010509)}
+#scene{position:fixed;inset:0;width:100%;height:100%;z-index:2;display:block}
+
+/* CRT / scan-line treatment — ONE static full-screen layer (vignette + scanlines), plus a short roll band */
+#crt{position:fixed;inset:0;z-index:60;pointer-events:none;overflow:hidden;
+  background:radial-gradient(ellipse at 50% 46%,transparent 52%,rgba(0,0,0,.6) 100%),repeating-linear-gradient(to bottom,rgba(0,0,0,0) 0 1px,rgba(0,0,0,.15) 1px 3px)}
+#crt::after{content:"";position:absolute;left:0;right:0;top:0;height:20vh;will-change:transform;
+  background:linear-gradient(to bottom,transparent,rgba(var(--c1),.05) 60%,transparent);animation:roll 7.5s linear infinite}
+@keyframes roll{from{transform:translateY(-30vh)}to{transform:translateY(110vh)}}
+
+/* full-screen scan beam (triggered by "scan system") */
+#beam{position:fixed;left:0;right:0;top:0;height:140px;z-index:30;pointer-events:none;opacity:0;will-change:transform;
+  background:linear-gradient(to bottom,transparent,rgba(var(--c1),.10) 55%,rgba(var(--c1),.55) 97%,rgba(var(--c2),.9) 99%,transparent)}
+#beam.go{animation:beam 1.7s cubic-bezier(.45,0,.55,1) 2}
+@keyframes beam{0%{transform:translateY(-150px);opacity:1}100%{transform:translateY(100vh);opacity:1}}
+
+/* ───────── HUD frame ───────── */
+#hud{position:fixed;inset:0;z-index:20;pointer-events:none}
+#hud>*{pointer-events:auto}
+body:not(.booted) #hud{visibility:hidden}
+#hud.glitch{animation:hudg .34s steps(1,end) 1}
+@keyframes hudg{0%{transform:translate(0)}14%{transform:translate(-5px,1px) skewX(.8deg)}28%{transform:translate(6px,-1px)}42%{transform:translate(-3px,0) skewX(-.6deg)}58%{transform:translate(4px,1px)}72%{transform:translate(-1px,0)}100%{transform:none}}
+
+#top{position:absolute;left:0;right:0;top:0;height:66px;padding:14px 22px;display:flex;justify-content:space-between;align-items:flex-start;
+  background:linear-gradient(to bottom,rgba(1,8,12,.85),transparent)}
+.brand{display:flex;gap:12px;align-items:center}
+.lg{width:38px;height:38px;color:rgb(var(--c1));filter:drop-shadow(0 0 6px rgba(var(--c1),.7))}
+.lg .o{stroke:rgb(var(--c2))}
+.brand h1{font:600 22px/1 var(--disp);letter-spacing:.42em;text-shadow:0 0 14px rgba(var(--c1),.8);padding-left:.1em}
+.brand p{margin-top:5px;font-size:9.5px;letter-spacing:.22em;color:rgba(var(--ink),.55)}
+.stat{display:flex;gap:18px;align-items:center;font-size:10px;letter-spacing:.18em;color:rgba(var(--ink),.6)}
+.stat b{font-weight:600;color:rgb(var(--ink))}
+.pill{display:inline-flex;align-items:center;gap:7px;padding:5px 11px;border:1px solid rgba(var(--c1),.35);background:rgba(var(--c1),.06);white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;background:rgb(var(--c1));box-shadow:0 0 8px rgb(var(--c1))}
+.pill.warn i{background:rgb(var(--c2));box-shadow:0 0 8px rgb(var(--c2))}
+.pill.off i{background:rgba(var(--ink),.3);box-shadow:none}
+#stateP i{animation:blink 1.6s ease-in-out infinite}
+@keyframes blink{50%{opacity:.25}}
+.clock{text-align:right;line-height:1.15}
+.clock b{display:block;font:500 22px/1 var(--disp);letter-spacing:.14em;text-shadow:0 0 12px rgba(var(--c1),.6)}
+.clock span{font-size:9.5px;letter-spacing:.2em;color:rgba(var(--ink),.55)}
+
+#left,#right{position:absolute;top:76px;bottom:calc(var(--conH,172px) + 22px);display:flex;flex-direction:column;gap:12px;min-height:0}
+#left{left:20px;width:296px}
+#right{right:20px;width:344px}
+#dock{display:flex;flex-direction:column;gap:12px;min-height:0;flex:0 1 auto;overflow-y:auto;overflow-x:hidden;scrollbar-width:none}
+#dock::-webkit-scrollbar{display:none}
+
+/* ───────── panels ───────── */
+.panel{position:relative;padding:11px 14px 13px;overflow:hidden;flex:none;
+  background:linear-gradient(180deg,rgba(var(--c1),.10),rgba(var(--c1),.025)),rgba(2,13,20,.74);
+  border:1px solid rgba(var(--c1),.26);box-shadow:inset 0 0 34px rgba(var(--c1),.05),0 0 26px rgba(var(--c1),.07)}
+.panel::after{content:"";position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(to bottom,transparent 0 3px,rgba(var(--c1),.035) 3px 4px)}
+.panel>.c{position:absolute;width:11px;height:11px;border:0 solid rgb(var(--c1));filter:drop-shadow(0 0 4px rgb(var(--c1)))}
+.c.a{left:-1px;top:-1px;border-width:2px 0 0 2px}.c.b{right:-1px;top:-1px;border-width:2px 2px 0 0}
+.c.d{left:-1px;bottom:-1px;border-width:0 0 2px 2px}.c.e{right:-1px;bottom:-1px;border-width:0 2px 2px 0}
+.ph{display:flex;align-items:center;gap:9px;margin-bottom:9px;padding-bottom:7px;border-bottom:1px solid rgba(var(--c1),.2)}
+.ph h3{flex:1;min-width:0;overflow:hidden;font:600 11.5px/1 var(--disp);letter-spacing:.24em;color:rgb(var(--ink));text-shadow:0 0 8px rgba(var(--c1),.6);white-space:nowrap}
+.tag{white-space:nowrap;font-size:9px;letter-spacing:.14em;padding:2px 6px;color:rgb(var(--c2));border:1px solid rgba(var(--c2),.5)}
+.x{width:18px;height:18px;line-height:16px;font-size:15px;color:rgba(var(--ink),.55);border:1px solid rgba(var(--c1),.25)}
+.x:hover{color:rgb(var(--c2));border-color:rgb(var(--c2))}
+.lbl{font-size:9px;letter-spacing:.2em;color:rgba(var(--ink),.5)}
+.sw{position:absolute;left:0;right:0;top:0;height:42%;pointer-events:none;transform:translateY(-110%);opacity:0;will-change:transform;
+  background:linear-gradient(to bottom,transparent,rgba(var(--c1),.25) 70%,rgba(var(--c1),.75) 97%,transparent)}
+.panel.in{animation:panelIn .75s cubic-bezier(.2,.9,.2,1) backwards}
+.panel.in .sw,.fx .sw{animation:sw 1.05s .05s cubic-bezier(.4,0,.2,1) 1 both}
+.hud-in{animation:hudIn .8s steps(1,end) backwards}
+@keyframes hudIn{0%{opacity:0}18%{opacity:1}28%{opacity:.15}40%{opacity:1}52%{opacity:.4}64%{opacity:1}}
+.panel.out{animation:panelOut .38s cubic-bezier(.6,0,.9,.4) forwards;pointer-events:none}
+@keyframes panelIn{
+  0%{opacity:0;transform:translateX(80px) skewX(-12deg);clip-path:inset(48% 0 48% 0)}
+  12%{opacity:1;transform:translateX(-12px) skewX(6deg);clip-path:inset(30% 0 60% 0)}
+  24%{transform:translateX(16px) skewX(-3deg);clip-path:inset(0 0 55% 0)}
+  36%{transform:translateX(-6px);clip-path:inset(0 0 8% 0);opacity:.55}
+  48%{transform:translateX(5px);opacity:1;clip-path:inset(0)}
+  60%{opacity:.45}66%{opacity:1}
+  100%{transform:none;clip-path:inset(0)}}
+@keyframes panelOut{
+  0%{opacity:1;transform:none;clip-path:inset(0)}
+  35%{transform:translateX(-6px) skewX(4deg);opacity:.7}
+  70%{transform:translateX(30px) scaleY(.05);clip-path:inset(0);opacity:.9}
+  100%{transform:translateX(60px) scaleY(.01);opacity:0}}
+@keyframes sw{0%{transform:translateY(-110%);opacity:1}88%{opacity:1}100%{transform:translateY(310%);opacity:0}}
+.rv{animation:rv .55s calc(var(--i,0)*70ms + .3s) backwards}
+@keyframes rv{0%{opacity:0;transform:translateX(14px)}35%{opacity:.9}50%{opacity:.25}68%{opacity:1}100%{opacity:1;transform:none}}
+.gl{animation:gl .55s steps(1,end) 1}
+@keyframes gl{0%{text-shadow:2px 0 rgba(var(--c2),.95),-2px 0 rgba(var(--c1),.95);transform:translateX(-2px)}
+  20%{text-shadow:-2px 0 rgba(var(--c2),.95),2px 0 rgba(var(--c1),.95);transform:translateX(2px)}
+  40%{text-shadow:none;transform:none}55%{text-shadow:3px 0 rgba(var(--c2),.9),-3px 0 rgba(var(--c1),.9);transform:translateX(1px)}
+  70%{text-shadow:none;transform:none}100%{text-shadow:none}}
+#idle.gone{display:none}
+
+/* left column */
+.big{display:flex;align-items:baseline;gap:4px}
+.big b{font:500 34px/1 var(--disp);letter-spacing:.06em;text-shadow:0 0 16px rgba(var(--c1),.8)}
+.big small{font-size:13px;color:rgba(var(--ink),.6)}
+.big .lbl{margin-left:auto}
+#spark{display:block;width:100%;height:50px;margin:6px 0 8px}
+.mt,.nd{display:grid;grid-template-columns:78px 1fr 34px;gap:8px;align-items:center;margin-top:5px;font-size:10px}
+.mt label,.nd b{font-weight:400;letter-spacing:.14em;color:rgba(var(--ink),.6)}
+.mt span,.nd span{text-align:right;color:rgb(var(--ink))}
+.bar{height:5px;background:rgba(var(--c1),.12);position:relative;overflow:hidden}
+.bar i{position:absolute;inset:0;transform-origin:left;transform:scaleX(var(--v,.5));background:linear-gradient(90deg,rgba(var(--c1),.55),rgb(var(--c1)));box-shadow:0 0 8px rgba(var(--c1),.8);transition:transform .8s cubic-bezier(.2,.8,.2,1)}
+.mt:nth-child(even) .bar i{background:linear-gradient(90deg,rgba(var(--c2),.55),rgb(var(--c2)));box-shadow:0 0 8px rgba(var(--c2),.7)}
+#pLog{flex:1;min-height:90px;display:flex;flex-direction:column}
+#log{flex:1;min-height:0;overflow:hidden;position:relative;display:flex;flex-direction:column;justify-content:flex-end;
+  -webkit-mask-image:linear-gradient(to bottom,transparent,#000 28%);mask-image:linear-gradient(to bottom,transparent,#000 28%)}
+#logIn{display:flex;flex-direction:column;will-change:transform}
+.ln{display:flex;gap:7px;height:15px;line-height:15px;font-size:9.5px;white-space:nowrap;overflow:hidden;color:rgba(var(--ink),.62)}
+.ln .ts{color:rgba(var(--ink),.35)}
+.ln .sub{width:84px;flex:none;color:rgb(var(--c1))}
+.ln .tx{flex:1;overflow:hidden}
+.ln .st{color:rgba(var(--c1),.85)}
+.ln.hot .sub,.ln.hot .st{color:rgb(var(--c2))}.ln.hot .tx{color:rgb(var(--ink))}
+.ln.new{animation:ln .5s ease-out}
+@keyframes ln{0%{background:rgba(var(--c1),.28)}100%{background:transparent}}
+
+/* command panels */
+.load{display:flex;flex-direction:column;gap:12px;padding:26px 0 18px;align-items:center;color:rgba(var(--ink),.7);letter-spacing:.2em;font-size:10px}
+.ldr{width:70%;height:3px;background:rgba(var(--c1),.15);position:relative;overflow:hidden}
+.ldr::after{content:"";position:absolute;top:0;bottom:0;width:36%;background:rgb(var(--c1));box-shadow:0 0 10px rgb(var(--c1));animation:ldr 1s ease-in-out infinite alternate}
+@keyframes ldr{from{left:0}to{left:64%}}
+.wx-main{display:flex;align-items:center;gap:14px}
+.wx-ico{width:84px;height:66px;flex:none}
+.wx-ico svg{width:100%;height:100%;overflow:visible;fill:none;stroke:rgb(var(--c1));stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 6px rgba(var(--c1),.7))}
+.wx-ico .o{stroke:rgb(var(--c2));filter:drop-shadow(0 0 5px rgba(var(--c2),.8))}
+.wx-t b{font:500 44px/1 var(--disp);text-shadow:0 0 18px rgba(var(--c1),.8)}
+.wx-t sup{font-size:15px;vertical-align:top;position:relative;top:4px;color:rgb(var(--c2))}
+.wx-t small{display:block;margin-top:4px;font-size:10px;letter-spacing:.12em;color:rgba(var(--ink),.7);text-transform:uppercase}
+.wx-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:12px 0 8px}
+.wx-grid div{padding:6px 8px;border-left:2px solid rgba(var(--c1),.5);background:rgba(var(--c1),.05)}
+.wx-grid label{display:block;font-size:8.5px;letter-spacing:.2em;color:rgba(var(--ink),.5)}
+.wx-grid span{font-size:12px;display:flex;align-items:center;gap:6px}
+.wx-grid svg{width:11px;height:11px;stroke:rgb(var(--c2));fill:none;stroke-width:2}
+.wx-chart{width:100%;height:76px;display:block;overflow:visible}
+.wx-chart text{font:8.5px var(--mono);fill:rgba(var(--ink),.5);letter-spacing:.08em}
+.wx-chart .ln1{fill:none;stroke:rgb(var(--c1));stroke-width:1.6;stroke-dasharray:700;stroke-dashoffset:700;animation:draw 1.4s .5s ease-out forwards;filter:drop-shadow(0 0 4px rgb(var(--c1)))}
+@keyframes draw{to{stroke-dashoffset:0}}
+.src{margin-top:6px;font-size:8.5px;letter-spacing:.18em;color:rgba(var(--ink),.45)}
+.src b{color:rgb(var(--c2));font-weight:600}
+.spin{transform-origin:32px 24px;animation:spin 16s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.drift{animation:drift 6s ease-in-out infinite alternate}
+@keyframes drift{to{transform:translateX(5px)}}
+.fall{animation:fall 1.1s linear infinite}.fall:nth-of-type(2){animation-delay:.35s}.fall:nth-of-type(3){animation-delay:.7s}
+@keyframes fall{0%{transform:translateY(-6px);opacity:0}30%{opacity:1}100%{transform:translateY(12px);opacity:0}}
+.zap{animation:zap 2.2s steps(1,end) infinite}
+@keyframes zap{0%,60%,64%,70%,100%{opacity:1}62%,68%{opacity:.15}}
+
+.dg{display:grid;grid-template-columns:118px 1fr 74px;gap:9px;align-items:center;margin:7px 0;font-size:10px}
+.dg .n{letter-spacing:.12em;color:rgba(var(--ink),.7);white-space:nowrap}
+.dg .v{text-align:right;letter-spacing:.06em;color:rgba(var(--ink),.5)}
+.dg.ok .v{color:rgb(var(--c1))}.dg.warn .v{color:rgb(var(--c2))}
+.dg.warn .bar i{background:linear-gradient(90deg,rgba(var(--c2),.55),rgb(var(--c2)));box-shadow:0 0 8px rgba(var(--c2),.7)}
+.dg .bar i{transition-duration:.55s}
+.dgf{display:flex;justify-content:space-between;margin-top:11px;padding-top:9px;border-top:1px solid rgba(var(--c1),.2);letter-spacing:.2em;font-size:10px}
+.dgf b{color:rgb(var(--c2))}.dgf b.ok{color:rgb(var(--c1))}
+
+.scn{display:grid;grid-template-columns:132px 1fr;gap:12px}
+.scn canvas{width:132px;height:132px;display:block}
+.sl{display:flex;flex-direction:column;gap:5px;min-width:0}
+.sl div{display:flex;justify-content:space-between;gap:6px;font-size:9.5px;border-bottom:1px dashed rgba(var(--c1),.16);padding-bottom:3px;animation:rv .5s backwards}
+.sl label{color:rgba(var(--ink),.5);letter-spacing:.12em;flex:none}
+.sl span{color:rgb(var(--ink));text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sl div.w span{color:rgb(var(--c2))}
+
+.tm b{display:block;font:500 46px/1 var(--disp);letter-spacing:.06em;text-shadow:0 0 18px rgba(var(--c1),.8)}
+.tm b em{font-style:normal;font-size:22px;color:rgb(var(--c2));margin-left:4px}
+.tm p{margin-top:8px;font-size:11px;letter-spacing:.16em;color:rgba(var(--ink),.8);text-transform:uppercase}
+.tm small{display:block;margin-top:4px;font-size:9px;letter-spacing:.18em;color:rgba(var(--ink),.45)}
+.hl{display:flex;flex-direction:column;gap:5px}
+.hl button{display:flex;justify-content:space-between;gap:10px;text-align:left;padding:6px 9px;border-left:2px solid rgba(var(--c1),.5);background:rgba(var(--c1),.05);font-size:10.5px}
+.hl button:hover{background:rgba(var(--c1),.16);border-color:rgb(var(--c2))}
+.hl b{font-weight:600;letter-spacing:.14em;color:rgb(var(--c1))}.hl span{color:rgba(var(--ink),.55);text-align:right}
+
+/* ───────── console ───────── */
+#console{position:absolute;left:50%;bottom:16px;transform:translateX(-50%);width:min(780px,calc(100% - 40px));padding-top:8px}
+#console::before{content:"";position:absolute;left:-8%;right:-8%;bottom:-16px;top:-28px;z-index:-1;pointer-events:none;background:radial-gradient(60% 70% at 50% 60%,rgba(1,6,10,.82),transparent)}
+.line{display:flex;gap:10px;align-items:baseline;min-height:22px}
+.line .lbl{flex:none;width:66px;text-align:right}
+#you{font-size:12.5px;color:rgba(var(--ink),.7);letter-spacing:.04em}
+#you.interim{color:rgba(var(--ink),.95);font-style:italic}
+#you.miss{color:rgba(var(--ink),.35)}
+#resp{font:500 16px/1.35 var(--disp);letter-spacing:.05em;color:rgb(var(--ink));text-shadow:0 0 12px rgba(var(--c1),.55);min-height:44px}
+#resp::after{content:"";display:inline-block;width:8px;height:15px;margin-left:4px;vertical-align:-2px;background:rgb(var(--c1));box-shadow:0 0 8px rgb(var(--c1));animation:blink 1s steps(1) infinite}
+.ctl{display:flex;gap:8px;align-items:center;margin-top:8px}
+#mic,#mute{flex:none;width:40px;height:38px;display:grid;place-items:center;border:1px solid rgba(var(--c1),.45);background:rgba(var(--c1),.07);color:rgb(var(--c1));position:relative}
+#mic svg,#mute svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+#mic:hover,#mute:hover{background:rgba(var(--c1),.2)}
+#mic.on{color:rgb(var(--c2));border-color:rgb(var(--c2));background:rgba(var(--c2),.1)}
+#mic.on::after{content:"";position:absolute;inset:-1px;border:1px solid rgb(var(--c2));animation:ping 1.6s ease-out infinite}
+@keyframes ping{0%{transform:scale(1);opacity:.9}100%{transform:scale(1.5,1.9);opacity:0}}
+#mic.na{opacity:.4;cursor:not-allowed}
+#mute.on{color:rgb(var(--c2));border-color:rgb(var(--c2))}
+#cf{flex:1;display:flex;border:1px solid rgba(var(--c1),.4);background:rgba(2,13,20,.8);height:38px}
+#cf span{display:grid;place-items:center;width:30px;color:rgb(var(--c2));font-weight:700}
+#cmd{flex:1;min-width:0;background:none;border:0;outline:0;letter-spacing:.06em;font-size:12.5px;user-select:text}
+#cmd::placeholder{color:rgba(var(--ink),.3)}
+#cf:focus-within{border-color:rgb(var(--c1));box-shadow:0 0 16px rgba(var(--c1),.3)}
+#cf button{padding:0 14px;letter-spacing:.2em;font-size:10px;color:rgb(var(--c1));border-left:1px solid rgba(var(--c1),.3)}
+#cf button:hover{background:rgba(var(--c1),.18)}
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px;justify-content:center}
+.chips button{flex:none}
+.chips button{padding:4px 10px;font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;border:1px solid rgba(var(--c1),.28);color:rgba(var(--ink),.75);background:rgba(var(--c1),.04)}
+.chips button:hover{border-color:rgb(var(--c2));color:rgb(var(--c2));background:rgba(var(--c2),.08)}
+
+/* ───────── boot overlay ───────── */
+#boot{position:fixed;inset:0;z-index:100;display:grid;place-items:center;text-align:center;background:radial-gradient(ellipse at center,rgba(1,6,10,.55),rgba(1,6,10,.92));transition:opacity .9s ease,visibility .9s}
+#boot.go{opacity:0;visibility:hidden}
+#boot .in{display:flex;flex-direction:column;align-items:center;gap:16px;padding:20px}
+#boot .lg{width:74px;height:74px}
+#boot h2{font:600 clamp(30px,6vw,54px)/1 var(--disp);letter-spacing:.5em;padding-left:.5em;text-shadow:0 0 24px rgba(var(--c1),.9)}
+#boot p{font-size:11px;letter-spacing:.3em;color:rgba(var(--ink),.6);max-width:520px;line-height:1.9}
+#go{margin-top:12px;padding:14px 34px;font:600 13px var(--disp);letter-spacing:.36em;color:rgb(var(--c1));border:1px solid rgb(var(--c1));background:rgba(var(--c1),.08);position:relative;overflow:hidden;box-shadow:0 0 30px rgba(var(--c1),.25),inset 0 0 20px rgba(var(--c1),.12)}
+#go::before{content:"";position:absolute;top:0;bottom:0;width:40%;left:-50%;background:linear-gradient(90deg,transparent,rgba(var(--c1),.35),transparent);animation:shine 2.4s ease-in-out infinite}
+@keyframes shine{to{left:130%}}
+#go:hover{background:rgba(var(--c1),.22);color:#fff}
+#boot small{font-size:9.5px;letter-spacing:.2em;color:rgba(var(--ink),.38)}
+
+/* ───────── responsive ───────── */
+@media (max-width:1180px){#left{width:250px}#right{width:300px}.dg{grid-template-columns:100px 1fr 64px;gap:7px}.dg .n{letter-spacing:.06em}.ph h3{letter-spacing:.16em}.ph{gap:6px}}
+@media (max-width:999px){
+  #left{display:none}
+  #right{left:12px;right:12px;width:auto;top:auto;bottom:calc(var(--conH,172px) + 14px);max-height:40vh;justify-content:flex-end}
+  .panel{background:linear-gradient(180deg,rgba(var(--c1),.10),rgba(var(--c1),.03)),rgba(2,13,20,.9)}
+  #idle{display:none}
+  .stat .hide-s{display:none}
+  .brand p{display:none}
+  #top{padding:12px 14px}
+  .clock b{font-size:17px}
+}
+@media (max-width:560px){.stat .pill:not(#stateP){display:none}.stat{gap:8px}.pill{padding:4px 8px}.brand{gap:9px}.brand h1{font-size:17px;letter-spacing:.3em}.lg{width:30px;height:30px}.clock span{display:none}.clock b{font-size:14px;letter-spacing:.08em}
+  .chips{flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start;scrollbar-width:none}.chips button{padding:4px 8px}
+  #resp{font-size:13.5px;min-height:36px}.line .lbl{display:none}#you{font-size:11.5px}.scn{grid-template-columns:1fr}.scn canvas{margin:auto}}
+@media (max-height:640px){.chips{display:none}}
+@media (prefers-reduced-motion:reduce){#crt::after{animation:none}.panel.in,.panel.out{animation-duration:.01s}}
+</style>
+</head>
+<body>
+<div id="bg"></div>
+<canvas id="scene"></canvas>
+<div id="beam"></div>
+
+<div id="hud">
+  <header id="top">
+    <div class="brand">
+      <svg class="lg" viewBox="0 0 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M24 3 42 13.5v21L24 45 6 34.5v-21z"/><path d="M12 31 24 13l12 18"/><path class="o" d="M18 31l6-9 6 9"/><circle cx="24" cy="33" r="2.2" fill="currentColor" stroke="none"/></g></svg>
+      <div><h1>KESTREL</h1><p>HOLOGRAPHIC TACTICAL INTERFACE · MK VII</p></div>
+    </div>
+    <div class="stat">
+      <span class="pill" id="stateP"><i></i><b id="state">STANDBY</b></span>
+      <span class="pill off" id="micP"><i></i><span>MIC <b id="micS">OFF</b></span></span>
+      <span class="pill hide-s" id="fpsP"><i></i><span><b id="fps">--</b> FPS</span></span>
+    </div>
+    <div class="clock"><b id="clk">--:--:--</b><span id="dte">--</span></div>
+  </header>
+
+  <aside id="left">
+    <section class="panel" id="pCore">
+      <i class="c a"></i><i class="c b"></i><i class="c d"></i><i class="c e"></i><div class="sw"></div>
+      <div class="ph"><h3>CORE OUTPUT</h3><span class="tag">AC-01</span></div>
+      <div class="big"><b id="pwr">98.6</b><small>%</small><span class="lbl">AETHER CELL</span></div>
+      <canvas id="spark"></canvas>
+      <div class="mt"><label>CORE LOAD</label><div class="bar"><i></i></div><span>--</span></div>
+      <div class="mt"><label>MEMORY</label><div class="bar"><i></i></div><span>--</span></div>
+      <div class="mt"><label>UPLINK</label><div class="bar"><i></i></div><span>--</span></div>
+      <div class="mt"><label>THERMAL</label><div class="bar"><i></i></div><span>--</span></div>
+    </section>
+    <section class="panel" id="pLog">
+      <i class="c a"></i><i class="c b"></i><i class="c d"></i><i class="c e"></i>
+      <div class="ph"><h3>TELEMETRY STREAM</h3><span class="tag">LIVE</span></div>
+      <div id="log"><div id="logIn"></div></div>
+    </section>
+  </aside>
+
+  <aside id="right">
+    <div id="dock"></div>
+    <section class="panel" id="idle">
+      <i class="c a"></i><i class="c b"></i><i class="c d"></i><i class="c e"></i><div class="sw"></div>
+      <div class="ph"><h3>NODE NETWORK</h3><span class="tag">NET-12</span></div>
+      <div id="nodes"></div>
+    </section>
+  </aside>
+
+  <footer id="console">
+    <div class="line"><span class="lbl">YOU ›</span><span id="you" class="miss">Say a command — “show weather”, “run diagnostics”, “scan system”</span></div>
+    <div class="line"><span class="lbl">KESTREL ›</span><span id="resp" aria-live="polite"></span></div>
+    <div class="ctl">
+      <button id="mic" class="na" title="Toggle microphone" aria-label="Toggle microphone"><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+      <form id="cf" autocomplete="off"><span>›</span><input id="cmd" type="text" placeholder="type a command…" spellcheck="false" aria-label="Command line"><button type="submit">SEND</button></form>
+      <button id="mute" title="Mute / unmute voice" aria-label="Mute or unmute voice"><svg viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9z"/><path class="w" d="M16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12"/></svg></button>
+    </div>
+    <div class="chips">
+      <button data-cmd="show weather">show weather</button><button data-cmd="run diagnostics">run diagnostics</button>
+      <button data-cmd="scan system">scan system</button><button data-cmd="locate me">locate me</button>
+      <button data-cmd="what time is it">time</button><button data-cmd="red alert">red alert</button><button data-cmd="help">help</button>
+    </div>
+  </footer>
+</div>
+
+<div id="crt"></div>
+
+<div id="boot">
+  <div class="in">
+    <svg class="lg" viewBox="0 0 48 48" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M24 3 42 13.5v21L24 45 6 34.5v-21z"/><path d="M12 31 24 13l12 18"/><path class="o" d="M18 31l6-9 6 9"/><circle cx="24" cy="33" r="2.2" fill="currentColor" stroke="none"/></g></svg>
+    <h2>KESTREL</h2>
+    <p>HOLOGRAPHIC TACTICAL INTERFACE<br>VOICE-ACTIVATED · AUDIO-REACTIVE · FULLY LOCAL</p>
+    <button id="go">INITIALIZE</button>
+    <small>ENABLES MICROPHONE + VOICE OUTPUT · BEST IN CHROME / EDGE / SAFARI</small>
+  </div>
+</div>
+
+<script>
+(() => {
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════
+   KESTREL — holographic tactical interface
+   One file, zero assets. Canvas 2D scene + DOM HUD + Web Speech API.
+   ═══════════════════════════════════════════════════════════════════ */
+
+// 2° land bitmap (Natural Earth 110m, rasterised offline) — 180×90 cells, LSB-first
+const LAND_MASK = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOAfAP8HAAAAAAAAAAAAAAAAAAAAAADo//z//wcAAAAAAAACAAAAAAAAAAAAhvvw//8PAPABAAAAwAMAAAAAAAAAwADkw////wEABAAAAABgAAAAAAAAAADAUT8A/v8PAAAAAAwA/j8AuAEAAAAAcBHtDcD/fwAAAAAwAPz/fwMAABCAAQD5w/wD8P8FAAAcAIL7//9//xOAAP/ff0668QD/HwAA+A8At///////v3/w/////x8++B8AAOD/1//7////////jP////+/+AE/gAcAn9f//////////w/w/////wEs4AEAAHz+////////////gL////8HeAAcAADg5///////////9ADgAf7/f4AnAAAAAH78////////H0QAAAiA//8f8AcAAIBB4////////38ADwAQAOD//5//AQAAHAT/////////A3AAAAAA/v//+T8AAGDz//////////8DAQAAAMD/////AwAAsP//////////LwAAAAAA6P///2IAAAD+//////////8CAAAAAAD///8/CAAA4P//////////JwAAAAAA8P///wYAAAD+/unz/////z8AAAAAAAD///8HAAAA/pgPPP//////MQAAAAAA8P//PwAAAMBD9v7n/////wcBAAAAAAD///8AAAAAPkD7f/7///8hEAAAAAAA4P//DwAAAIDhAv/n////f8YAAAAAAAD8//8AAAAA+AdE//////8jDwAAAAAAgP//AwAAAMD/APD/////PxgAAAAAAADw/x8AAAAA/n/v//////8HAAAAAAAAAPwDAgAAAOD////7////fwAAAAAAAACgHyAAAACA//9/f/7///8DAAAAAAAAAPQBAAAAAPj//+cv+P//PwAAAAAAAAAAHjAAAADA/////g/+//8EAAAAAAAAAOBhCAAAAP7//99/4D//AAAAAAAAAAAAPAMEAADA////+Qf84BcAAAAAAAAAAAA/AAAAAPz//58fgAf+QAAAAAAAAAAAAA8AAADg////ewA4gA8EAAAAAAAAAADAAAAAAPz//38BgAP4QQAAAAAAAAAAAAgPAADA////zwAwgAwQAAAAAAAAAAAA9Q8AAPj///8HAAVIAAAAAAAAAAAAAID/AQAA////fwBAAAAQAAAAAAAAAAAA+P8AAGDh//8DAAA0GAAAAAAAAAAAAID/HwAAAPj/HwAAgMIBAAAAAAAAAAAA/P8BAACA//8AAAAYXgAAAAAAAAAAAMD/fwAAAPz/BwAAAOOBAQAAAAAAAAAA/P8/AACA/z8AAABgbtQBAAAAAAAAAOD//w8AAPD/AwAAAAQIeAAAAAAAAAAA/P//AQAA/z8AAACAA4APAQAAAAAAAID//w8AAPD/AwAAAAARsEAAAAAAAAAA+P9/AAAA/j8AAAAAAAAAAAAAAAAAAAD//wcAAPD/QwAAAACAIwAAAAAAAAAA8P9/AAAA/z8EAAAAAD8GIAAAAAAAAAD8/wMAAPD/cQAAAAD4ZwAAAAAAAAAAgP8/AAAA/w8HAAAAgP8HAAAAAAAAAAD4/wMAAOD/MAAAAAD//wEBAAAAAAAAgP8PAAAA/g8DAAAA+P8fAAAAAAAAAAD4PwAAAOB/EAAAAID//wMAAAAAAAAAgP8DAAAA/AMAAAAA+P9/AAAAAAAAAAD8HwAAAMA/AAAAAID//wcAAAAAAAAAwP8BAAAA+AEAAAAA8P9/AAAAAAAAAAD8DwAAAIAPAAAAAAAP/gMAAAAAAAAAwB8AAAAAAAAAAAAAEIAfAAEAAAAAAAD+AwAAAAAAAAAAAAAA8AEgAAAAAAAA4AcAAAAAAAAAAAAAAAAAAAYAAAAAAABeAAAAAAAAAAAAAAAAwAAwAAAAAAAAwAMAAAAAAAAAAAAAAAAIgAEAAAAAAAAeAAAAAAAAAAAAAAAAAAAMAAAAAAAA4AEAAAAAAAAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAABAAAAAAAAAAAAAAAAcAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOAAAAAAAAAAAAAAAAAAAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAMAAAAAAAB4AEDwn/8HAAAAAAAAAAAwAAAAAACA/P/h/////w8AAAAAAAAAwAcAAAD4////z///////PwAAAAAAHALwAACA//////////////8HAADw/y///wMAAP7/////////////HwAA+P///38AAID///////////////8AAPL/////BwAO////////////////DwAA8P////8HEPD//////////////z8AAOD/////////////////////////H/AfwP//////////////////////////////////////////////////////////////////////////////////////";
+
+const MONO = 'ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace';
+const $ = (s, r = document) => r.querySelector(s);
+const TAU = Math.PI * 2;
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+const rand = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[(Math.random() * a.length) | 0];
+const pad = (n, l = 2) => String(n).padStart(l, '0');
+const hex = (l = 4) => Math.floor(Math.random() * 16 ** l).toString(16).toUpperCase().padStart(l, '0');
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ease = t => t < .5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+/* ───────────────────────── palette ───────────────────────── */
+const THEMES = { normal: { a: [25, 227, 255], b: [255, 140, 26] }, alert: { a: [255, 66, 48], b: [255, 186, 48] } };
+const P = [[25, 227, 255], [255, 140, 26], [200, 250, 255]];      // primary, secondary, hot-white
+let pFrom = THEMES.normal, pTo = THEMES.normal, pT = 1, colCache = [[], [], []];
+let themeName = 'normal', alertMix = 0;
+const glow = [null, null, null], rim = [null];
+function col(i, a) {
+  const k = (clamp(a, 0, 1) * 32 + .5) | 0, c = colCache[i];
+  return c[k] || (c[k] = `rgba(${P[i][0] | 0},${P[i][1] | 0},${P[i][2] | 0},${(k / 32).toFixed(3)})`);
+}
+const GS = .78;                                    // glow sprites keep only the inner 78% of the falloff (the rest is invisible fill-rate)
+function makeGlow(rgb) {
+  const s = 256, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(s / 2, s / 2, 0, s / 2, s / 2, s / 2), q = `${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0}`;
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.1 / GS, `rgba(${q},.9)`); gr.addColorStop(.32 / GS, `rgba(${q},.28)`);
+  gr.addColorStop(.62 / GS, `rgba(${q},.07)`); gr.addColorStop(1, `rgba(${q},0)`);
+  g.fillStyle = gr; g.fillRect(0, 0, s, s); return c;
+}
+function makeRim(rgb) {                       // fresnel-ish shading for the globe
+  const s = 256, c = document.createElement('canvas'); c.width = c.height = s;
+  const g = c.getContext('2d'), gr = g.createRadialGradient(s / 2, s / 2, s * .30, s / 2, s / 2, s / 2), q = `${rgb[0] | 0},${rgb[1] | 0},${rgb[2] | 0}`;
+  gr.addColorStop(0, `rgba(${q},0)`); gr.addColorStop(.8, `rgba(${q},.13)`); gr.addColorStop(.96, `rgba(${q},.45)`); gr.addColorStop(1, `rgba(${q},0)`);
+  g.fillStyle = gr; g.fillRect(0, 0, s, s); return c;
+}
+function applyPalette() {
+  const t = ease(pT);
+  for (let k = 0; k < 3; k++) { P[0][k] = lerp(pFrom.a[k], pTo.a[k], t); P[1][k] = lerp(pFrom.b[k], pTo.b[k], t); P[2][k] = lerp(P[0][k], 255, .74); }
+  colCache = [[], [], []];
+  glow[0] = makeGlow(P[0]); glow[1] = makeGlow(P[1]); glow[2] = makeGlow(P[2]); rim[0] = makeRim(P[0]);
+  const st = document.documentElement.style;
+  st.setProperty('--c1', `${P[0][0] | 0},${P[0][1] | 0},${P[0][2] | 0}`); st.setProperty('--c2', `${P[1][0] | 0},${P[1][1] | 0},${P[1][2] | 0}`);
+}
+function setTheme(name) {
+  if (name === themeName) return;
+  themeName = name; pFrom = { a: P[0].slice(), b: P[1].slice() }; pTo = THEMES[name]; pT = 0;
+}
+applyPalette();
+
+/* ───────────────────────── canvas + layout ───────────────────────── */
+const cv = $('#scene'), ctx = cv.getContext('2d');
+const QUAL = [1, .78, .6]; let qi = 0; const LOCK_Q = /lock|hq/.test(location.hash);   // #hq → never lower the render resolution
+let W = 0, H = 0, DPR = 1, cx0 = 0, cy0 = 0, cx = 0, cy = 0, R = 300;
+function resize() {
+  W = innerWidth; H = innerHeight;
+  DPR = Math.max(.75, Math.min(devicePixelRatio || 1, 2) * QUAL[qi]);
+  cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  if (W >= 1000) {
+    R = Math.min((W - 700) / 2 * 1.15, (H - 232) / 2 * 1.04); R = Math.max(R, Math.min(H * .3, W * .25));
+    cx0 = W / 2; cy0 = 66 + (H - 246) / 2;
+  } else {
+    R = Math.min(W * .46, H * .25, 300); cx0 = W / 2; cy0 = Math.max(H * .3, R + 84);
+  }
+  sizeSpark();
+}
+let rzT = 0; addEventListener('resize', () => { clearTimeout(rzT); rzT = setTimeout(resize, 80); });
+const mouse = { x: 0, y: 0, tx: 0, ty: 0 };
+addEventListener('pointermove', e => { mouse.tx = (e.clientX / innerWidth - .5) * 2; mouse.ty = (e.clientY / innerHeight - .5) * 2; }, { passive: true });
+
+/* ───────────────────────── globe geometry ───────────────────────── */
+const ll2v = (lat, lon, o = []) => { const a = lat * Math.PI / 180, b = lon * Math.PI / 180; o[0] = Math.cos(a) * Math.sin(b); o[1] = Math.sin(a); o[2] = Math.cos(a) * Math.cos(b); return o; };
+const LAND = (() => {
+  const bin = atob(LAND_MASK), by = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) by[i] = bin.charCodeAt(i);
+  const N = 6800, ga = Math.PI * (3 - Math.sqrt(5)), out = [];
+  for (let i = 0; i < N; i++) {
+    const y = 1 - 2 * (i + .5) / N, r = Math.sqrt(1 - y * y), a = i * ga, x = Math.sin(a) * r, z = Math.cos(a) * r;
+    const lat = Math.asin(y) * 180 / Math.PI, lon = Math.atan2(x, z) * 180 / Math.PI;
+    const k = Math.min(89, ((90 - lat) / 2) | 0) * 180 + Math.min(179, ((lon + 180) / 2) | 0);
+    if ((by[k >> 3] >> (k & 7)) & 1) out.push(x, y, z);
+  }
+  return Float32Array.from(out);
+})();
+const NL = LAND.length / 3;
+const GRAT = (() => {
+  const pts = [], lens = [];
+  for (const lat of [-60, -30, 0, 30, 60]) { for (let k = 0; k <= 72; k++) pts.push(...ll2v(lat, k * 5)); lens.push(73); }
+  for (let lon = 0; lon < 360; lon += 30) { for (let k = 0; k <= 36; k++) pts.push(...ll2v(-90 + k * 5, lon)); lens.push(37); }
+  return { p: Float32Array.from(pts), lens, n: pts.length / 3 };
+})();
+const SX = new Float32Array(Math.max(NL, GRAT.n, 64)), SY = new Float32Array(SX.length), SZ = new Float32Array(SX.length), BK = new Uint8Array(NL);
+let yaw = 0, yawTarget = null, tilt = .36, tiltTarget = .36, spinBoost = 0;
+function rotate(src, n, cosY, sinY, cosT, sinT) {
+  for (let i = 0, j = 0; i < n; i++, j += 3) {
+    const x = src[j], y = src[j + 1], z = src[j + 2], x1 = x * cosY + z * sinY, z1 = -x * sinY + z * cosY;
+    SX[i] = x1; SY[i] = y * cosT - z1 * sinT; SZ[i] = y * sinT + z1 * cosT;
+  }
+}
+const CITIES = [['NYC', 40.7, -74], ['LDN', 51.5, -.1], ['TYO', 35.7, 139.7], ['SYD', -33.9, 151.2], ['SAO', -23.5, -46.6], ['CPT', -33.9, 18.4],
+  ['DXB', 25.2, 55.3], ['SIN', 1.35, 103.8], ['LAX', 34, -118.2], ['REK', 64.1, -21.9], ['MUM', 19.1, 72.9], ['NBO', -1.3, 36.8]].map(c => ({ code: c[0], lat: c[1], lon: c[2], v: ll2v(c[1], c[2]), ping: 0, ms: 20 + Math.random() * 90 }));
+const ARC_N = 26, arcs = [];
+function newArc() {
+  const a = (Math.random() * CITIES.length) | 0; let b = (Math.random() * CITIES.length) | 0; if (b === a) b = (a + 5) % CITIES.length;
+  const va = CITIES[a].v, vb = CITIES[b].v, d = clamp(va[0] * vb[0] + va[1] * vb[1] + va[2] * vb[2], -1, 1), om = Math.acos(d), so = Math.sin(om) || 1, h = .08 + .2 * om / Math.PI;
+  const pts = new Float32Array(ARC_N * 3);
+  for (let i = 0; i < ARC_N; i++) {
+    const s = i / (ARC_N - 1), k1 = Math.sin((1 - s) * om) / so, k2 = Math.sin(s * om) / so, r = 1 + h * Math.sin(Math.PI * s);
+    pts[i * 3] = (va[0] * k1 + vb[0] * k2) * r; pts[i * 3 + 1] = (va[1] * k1 + vb[1] * k2) * r; pts[i * 3 + 2] = (va[2] * k1 + vb[2] * k2) * r;
+  }
+  return { a, b, pts, t: 0, sp: rand(.16, .3) };
+}
+for (let i = 0; i < 5; i++) { const a = newArc(); a.t = Math.random(); arcs.push(a); }
+let pin = null;            // { lat, lon, v, t0 } — the user's location
+
+/* ───────────────────────── sprites / particles ───────────────────────── */
+const PN = 150, pxs = new Float32Array(PN), pys = new Float32Array(PN), pzs = new Float32Array(PN), pss = new Float32Array(PN);
+for (let i = 0; i < PN; i++) { pxs[i] = Math.random(); pys[i] = Math.random(); pzs[i] = i % 3; pss[i] = rand(.5, 1.5); }
+const streaks = []; let streakT = 0;
+
+/* ───────────────────────── voice / activity model ───────────────────────── */
+const V = { amp: 0, boundary: 0, syl: 0, sylT: 0, userKick: 0, mic: 0, bars: new Float32Array(112), shockCd: 0 };
+const flag = { speaking: false, hearing: false, thinking: false, scanning: false };
+const mix = { speak: 0, hear: 0, think: 0, scan: 0 };
+let intro = .22, introTarget = .22, glitchF = 0, scanAng = 0, speedMul = 1;
+const shocks = [];
+function spawnShock(p = 1, c = 0) { if (shocks.length < 8) shocks.push({ r: .16, a: .7 * p, c }); }
+const blips = Array.from({ length: 10 }, () => ({ a: rand(0, TAU), r: rand(.25, .95), life: 0 }));
+function triggerGlitch(n = 8) {
+  if (REDUCED) return; glitchF = Math.max(glitchF, n);
+  const h = $('#hud'); h.classList.remove('glitch'); void h.offsetWidth; h.classList.add('glitch');
+}
+
+/* microphone level meter (real audio-reactivity while YOU speak) */
+let an = null, fdata = null, micCtx = null, micStream = null;
+async function initMeter() {                       // → 'ok' | 'denied' | 'na'
+  if (MOBILE || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'na';   // (Android: a 2nd mic client starves SpeechRecognition)
+  try {
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    const AC = window.AudioContext || window.webkitAudioContext; micCtx = micCtx || new AC(); if (micCtx.state === 'suspended') micCtx.resume();
+    const src = micCtx.createMediaStreamSource(micStream); an = micCtx.createAnalyser(); an.fftSize = 128; an.smoothingTimeConstant = .55;
+    src.connect(an); fdata = new Uint8Array(an.frequencyBinCount); return 'ok';
+  } catch (e) { return /NotAllowed|Security|Permission/i.test(e && e.name) ? 'denied' : 'na'; }
+}
+function stopMeter() { if (micStream) micStream.getTracks().forEach(t => t.stop()); micStream = null; an = null; fdata = null; V.mic = 0; }
+function updateVoice(dt, t) {
+  let target = 0;
+  V.userKick *= Math.exp(-dt * 3.2);
+  V.boundary *= Math.exp(-dt * 8);
+  if (flag.speaking) {                                       // synthetic syllable envelope + real word-boundary kicks
+    V.sylT -= dt; if (V.sylT <= 0) { V.syl = Math.random() < .14 ? .06 : .3 + Math.random() * .7; V.sylT = .07 + Math.random() * .13; }
+    target = Math.max(V.syl, V.boundary);
+  } else {
+    let lvl = 0;
+    if (an) { an.getByteFrequencyData(fdata); let s = 0; for (let i = 2; i < 24; i++) s += fdata[i]; lvl = clamp((s / 22 / 255 - .06) * 3.6, 0, 1); }
+    V.mic = lvl; target = Math.max(lvl > .05 ? lvl : 0, V.userKick * .8);
+  }
+  V.amp += (target - V.amp) * (1 - Math.exp(-dt * (target > V.amp ? 30 : 8)));
+  V.shockCd -= dt;
+  if (target - V.amp > .3 && V.shockCd <= 0) { spawnShock(.6 + V.amp, flag.speaking ? 1 : 0); V.shockCd = .28; }
+  // bars
+  const NB = V.bars.length, live = !flag.speaking && an && V.mic > .05;
+  for (let i = 0; i < NB; i++) {
+    const u = Math.abs(i / NB * 2 - 1); let tg;
+    if (live) tg = (fdata[2 + ((u * 34) | 0)] / 255) * 1.15;
+    else if (V.amp > .03) tg = V.amp * (.3 + .7 * Math.abs(Math.sin(i * .9 + t * 9) * Math.sin(i * .37 - t * 5.3)));
+    else tg = .06 + .045 * Math.sin(i * .35 + t * 1.6);
+    V.bars[i] += (tg - V.bars[i]) * (1 - Math.exp(-dt * (tg > V.bars[i] ? 26 : 9)));
+  }
+}
+
+/* ───────────────────────── scene drawing ───────────────────────── */
+const ring = { a: 0, b: 0, c: 0, d: 0, g1: 0, g2: 0 };
+function ticks(r, n, len, rot, major, mlen) {
+  ctx.beginPath();
+  for (let i = 0; i < n; i++) {
+    const a = rot + i * TAU / n, c = Math.cos(a), s = Math.sin(a), l = i % major === 0 ? mlen : len;
+    ctx.moveTo(cx + c * r, cy + s * r); ctx.lineTo(cx + c * (r + l), cy + s * (r + l));
+  }
+  ctx.stroke();
+}
+function dashed(r, n, rot, duty) {                 // n dashes that tile the circle exactly
+  const per = TAU * r / n; ctx.setLineDash([per * duty, per * (1 - duty)]); ctx.lineDashOffset = -rot * r;
+  ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+}
+function sprite(img, x, y, s, a) { s *= GS; ctx.globalAlpha = a; ctx.drawImage(img, x - s / 2, y - s / 2, s, s); }
+
+function drawFloor(t, A) {                         // receding perspective grid, faded toward the horizon
+  const hy = H * .64, span = H - hy; if (span < 40) return;
+  const g = ctx.createLinearGradient(0, hy, 0, H); g.addColorStop(0, col(0, 0)); g.addColorStop(1, col(0, .3 * A));
+  ctx.strokeStyle = g; ctx.lineWidth = 1; ctx.beginPath();
+  const sc = (t * .35 + mix.scan * t * .3) % 1, N = 12;
+  for (let k = 0; k < N; k++) { const z = (k + sc) / N, y = hy + span * z * z * z; ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  const cols = 22, vx = cx0, spread = Math.max(W, 900) * .17;
+  for (let i = -cols / 2; i <= cols / 2; i++) { ctx.moveTo(vx + i * spread * .05, hy); ctx.lineTo(vx + i * spread, H); }
+  ctx.stroke();
+}
+function drawParticles(t, dt, A) {
+  const sizes = [1, 1.6, 2.4], al = [.22, .38, .62];
+  for (let i = 0; i < PN; i++) {
+    pys[i] -= dt * pss[i] * (.012 + pzs[i] * .014) * (1 + mix.scan * 3); if (pys[i] < -.02) { pys[i] = 1.02; pxs[i] = Math.random(); }
+  }
+  for (let b = 0; b < 3; b++) {
+    ctx.fillStyle = col(b === 2 ? 2 : 0, al[b] * A); const s = sizes[b];
+    ctx.beginPath();
+    for (let i = b; i < PN; i += 3) ctx.rect(pxs[i] * W + Math.sin(t * .4 + i) * 6 * (b + 1), pys[i] * H, s, s);
+    ctx.fill();
+  }
+  streakT -= dt;
+  if (streakT <= 0 && streaks.length < 5 && !REDUCED) { streaks.push({ x: rand(0, W), y: rand(H * .1, H * .9), l: rand(60, 200), v: rand(500, 1100), a: 1, c: Math.random() < .3 ? 1 : 0 }); streakT = rand(.25, .9); }
+  ctx.lineWidth = 1;
+  for (let i = streaks.length - 1; i >= 0; i--) {
+    const s = streaks[i]; s.x += s.v * dt; s.a -= dt * 1.1; if (s.a <= 0 || s.x - s.l > W) { streaks.splice(i, 1); continue; }
+    const g = ctx.createLinearGradient(s.x - s.l, 0, s.x, 0); g.addColorStop(0, col(s.c, 0)); g.addColorStop(1, col(s.c, .5 * s.a * A));
+    ctx.strokeStyle = g; ctx.beginPath(); ctx.moveTo(s.x - s.l, s.y); ctx.lineTo(s.x, s.y); ctx.stroke();
+  }
+}
+
+function drawCore(t, A) {
+  const amp = V.amp, k = (1 + amp * .62 + .05 * Math.sin(t * 2.3) + .03 * Math.sin(t * 6.1)) * (.45 + .55 * intro);
+  const S = R * 1.05 * k;
+  sprite(glow[0], cx, cy, S * 2.0, A * (.26 + .26 * amp + mix.hear * .12) * (1 - mix.speak * .6));
+  sprite(glow[1], cx, cy, S * 1.8, A * (.06 + mix.speak * (.28 + .3 * amp) + mix.think * .14));
+  sprite(glow[0], cx, cy, S * .62, A * (.32 + .45 * amp));
+  // anamorphic streak
+  ctx.globalAlpha = A * (.16 + .5 * amp + mix.scan * .2); ctx.drawImage(glow[0], cx - R * 1.35 * k * GS, cy - R * .03 * k * GS, R * 2.7 * k * GS, R * .06 * k * GS);
+  ctx.globalAlpha = A * (.08 + .3 * amp); ctx.drawImage(glow[1], cx - R * .05 * k * GS, cy - R * .9 * k * GS, R * .1 * k * GS, R * 1.8 * k * GS);
+}
+function drawReactor(t, A) {                       // coil ring in the middle of the globe
+  const amp = V.amp, r = R * .135 * (.6 + .4 * intro), n = 12, rot = ring.g1 * 1.7;
+  ctx.lineCap = 'butt'; ctx.lineWidth = R * .022; ctx.strokeStyle = col(0, A * (.55 + .45 * amp)); ctx.beginPath();
+  for (let i = 0; i < n; i++) { const a = rot + i * TAU / n; ctx.arc(cx, cy, r, a, a + TAU / n * .62); ctx.moveTo(cx + Math.cos(a + TAU / n) * r, cy + Math.sin(a + TAU / n) * r); }
+  ctx.stroke();
+  ctx.lineWidth = 1.2; ctx.strokeStyle = col(1, A * (.6 + .3 * amp)); ctx.beginPath();
+  for (let i = 0; i < 3; i++) { const a = -rot * .6 + i * TAU / 3; ctx.moveTo(cx + Math.cos(a) * r * .55, cy + Math.sin(a) * r * .55); ctx.lineTo(cx + Math.cos(a + TAU / 3) * r * .55, cy + Math.sin(a + TAU / 3) * r * .55); }
+  ctx.stroke();
+  sprite(glow[0], cx, cy, r * (1.7 + amp * 1.3), A);
+  sprite(glow[2], cx, cy, r * .9, A * .9);
+}
+
+function drawGlobe(t, dt, A) {
+  const g = R * .52 * (.7 + .3 * intro);
+  if (yawTarget !== null) {                        // glide to a requested longitude
+    let d = yawTarget - yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); yaw += d * (1 - Math.exp(-dt * 2.4)); if (Math.abs(d) < .004) yawTarget = null;
+  } else yaw += dt * (.16 + spinBoost * .9 + mix.scan * .25);
+  tilt += (tiltTarget - tilt) * (1 - Math.exp(-dt * 2));
+  const cT = Math.cos(tilt + mouse.y * .07), sT = Math.sin(tilt + mouse.y * .07), cY = Math.cos(yaw), sY = Math.sin(yaw);
+  sprite(rim[0], cx, cy, g * 2.16, A * (.9 + V.amp * .4));
+  ctx.lineWidth = 1.4; ctx.strokeStyle = col(0, A * .5); ctx.beginPath(); ctx.arc(cx, cy, g, 0, TAU); ctx.stroke();
+
+  // graticule (back hemisphere dim, front bright)
+  rotate(GRAT.p, GRAT.n, cY, sY, cT, sT);
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.lineWidth = pass ? 1 : .7; ctx.strokeStyle = col(0, A * (pass ? .34 : .1)); ctx.beginPath();
+    let off = 0;
+    for (let li = 0; li < GRAT.lens.length; li++) {
+      const L = GRAT.lens[li];
+      for (let k = 1; k < L; k++) {
+        const i = off + k, z = SZ[i] + SZ[i - 1];
+        if ((z >= 0) === (pass === 1)) { ctx.moveTo(cx + SX[i - 1] * g, cy - SY[i - 1] * g); ctx.lineTo(cx + SX[i] * g, cy - SY[i] * g); }
+      }
+      off += L;
+    }
+    ctx.stroke();
+  }
+
+  // land dots
+  rotate(LAND, NL, cY, sY, cT, sT);
+  for (let i = 0; i < NL; i++) { const z = SZ[i]; BK[i] = z < 0 ? 0 : z < .3 ? 1 : z < .66 ? 2 : 3; }
+  const ds = Math.max(1.6, g * .0175), al = [.13, .38, .7, 1], sz = [ds * .7, ds, ds * 1.1, ds * 1.25];
+  for (let b = 0; b < 4; b++) {
+    ctx.fillStyle = col(b === 3 ? 2 : 0, A * al[b]); ctx.beginPath(); const s = sz[b], h = s / 2;
+    for (let i = 0; i < NL; i++) if (BK[i] === b) ctx.rect(cx + SX[i] * g - h, cy - SY[i] * g - h, s, s);
+    ctx.fill();
+  }
+
+  // data arcs between nodes
+  for (let ai = 0; ai < arcs.length; ai++) {
+    const a = arcs[ai]; a.t += dt * a.sp * (1 + mix.scan * 2 + mix.speak * .6);
+    if (a.t >= 1) { CITIES[a.b].ping = 1; arcs[ai] = newArc(); continue; }
+    rotate(a.pts, ARC_N, cY, sY, cT, sT);
+    const head = a.t * (ARC_N - 1);
+    ctx.lineWidth = 1; ctx.strokeStyle = col(1, A * .16); ctx.beginPath();
+    for (let k = 1; k < ARC_N; k++) if (SZ[k] + SZ[k - 1] > -.1) { ctx.moveTo(cx + SX[k - 1] * g, cy - SY[k - 1] * g); ctx.lineTo(cx + SX[k] * g, cy - SY[k] * g); }
+    ctx.stroke();
+    ctx.lineWidth = 2; ctx.strokeStyle = col(1, A * .9); ctx.beginPath();
+    for (let k = 1; k < ARC_N; k++) { const d = head - k; if (d > -1 && d < 7 && SZ[k] + SZ[k - 1] > -.1) { ctx.moveTo(cx + SX[k - 1] * g, cy - SY[k - 1] * g); ctx.lineTo(cx + SX[k] * g, cy - SY[k] * g); } }
+    ctx.stroke();
+    const hi = Math.min(ARC_N - 1, Math.round(head));
+    if (SZ[hi] > -.05) sprite(glow[1], cx + SX[hi] * g, cy - SY[hi] * g, g * .11, A);
+  }
+
+  // city nodes + pings
+  ctx.font = `${Math.max(8.5, R * .026)}px ${MONO}`; ctx.textAlign = 'left';
+  for (let i = 0; i < CITIES.length; i++) {
+    const c = CITIES[i], v = c.v, x = v[0] * cY + v[2] * sY, z1 = -v[0] * sY + v[2] * cY, y = v[1] * cT - z1 * sT, z = v[1] * sT + z1 * cT;
+    c.ping = Math.max(0, c.ping - dt * .8);
+    if (z < .04) continue;
+    const px = cx + x * g, py = cy - y * g;
+    ctx.fillStyle = col(2, A * (.7 + z * .3)); ctx.fillRect(px - 1.5, py - 1.5, 3, 3);
+    if (c.ping > 0) surfaceRing(px, py, x, y, z, g * .16 * (1.1 - c.ping), c.ping * A, 1);
+    if (mix.scan > .3 || c.ping > .3) { ctx.fillStyle = col(1, A * clamp(Math.max(mix.scan, c.ping), 0, 1)); ctx.fillText(c.code, px + 6, py - 4); }
+  }
+  if (pin) {                                        // the user's position
+    const v = pin.v, x = v[0] * cY + v[2] * sY, z1 = -v[0] * sY + v[2] * cY, y = v[1] * cT - z1 * sT, z = v[1] * sT + z1 * cT;
+    if (z > .02) {
+      const px = cx + x * g, py = cy - y * g, ph = ((t - pin.t0) * .7) % 1;
+      surfaceRing(px, py, x, y, z, g * .05 + g * .16 * ph, (1 - ph) * A, 1); surfaceRing(px, py, x, y, z, g * .05, A * .9, 1);
+      sprite(glow[1], px, py, g * .16, A); ctx.fillStyle = col(1, A); ctx.fillText('◉ YOU', px + 9, py + 3);
+    }
+  }
+}
+function surfaceRing(px, py, nx, ny, nz, r, a, c) {  // circle lying on the sphere → foreshortened ellipse
+  if (a <= .01) return;
+  ctx.lineWidth = 1.2; ctx.strokeStyle = col(c, a); ctx.beginPath();
+  ctx.ellipse(px, py, r, Math.max(r * .12, r * nz), Math.atan2(-ny, nx) + Math.PI / 2, 0, TAU); ctx.stroke();
+}
+
+function drawVoiceRing(t, A) {
+  const NB = V.bars.length, r0 = R * .585 * (.7 + .3 * intro), len = R * .15;
+  ctx.lineCap = 'round'; ctx.lineWidth = Math.max(1.6, R * .0075);
+  for (let pass = 0; pass < 2; pass++) {
+    ctx.strokeStyle = pass ? col(2, A * .9) : col(mix.speak > .5 ? 1 : 0, A * (.5 + V.amp * .4)); ctx.beginPath();
+    for (let i = pass; i < NB; i += 2) {
+      const a = i * TAU / NB - Math.PI / 2, c = Math.cos(a), s = Math.sin(a), l = R * .012 + len * V.bars[i] * (pass ? .55 : 1);
+      ctx.moveTo(cx + c * r0, cy + s * r0); ctx.lineTo(cx + c * (r0 + l), cy + s * (r0 + l));
+    }
+    ctx.stroke();
+  }
+  ctx.lineCap = 'butt';
+}
+
+function drawRings(t, dt, A) {
+  const sm = speedMul; ring.a -= dt * .2 * sm; ring.b += dt * .34 * sm; ring.c += dt * .62 * sm; ring.d -= dt * .08 * sm; ring.g1 += dt * .5 * sm; ring.g2 -= dt * .38 * sm;
+  const k = lerp(.6, 1, intro), amp = V.amp, bump = 1 + amp * .5;
+  // A — thick amber dashes
+  ctx.lineWidth = Math.max(3, R * .017); ctx.strokeStyle = col(1, A * .72 * bump); dashed(R * .805 * k, 36, ring.a, .62);
+  ctx.lineWidth = 1; ctx.strokeStyle = col(0, A * .28); ctx.beginPath(); ctx.arc(cx, cy, R * .775 * k, 0, TAU); ctx.arc(cx, cy, R * .835 * k, 0, TAU); ctx.stroke();
+  // B — fine amber ticks
+  ctx.lineWidth = 1; ctx.strokeStyle = col(1, A * .55); ticks(R * .865 * k, 180, R * .009, ring.b, 5, R * .02);
+  ctx.strokeStyle = col(0, A * .35); ctx.beginPath(); ctx.arc(cx, cy, R * .865 * k, 0, TAU); ctx.stroke();
+  // C — broken arcs with glowing heads
+  const rc = R * .925 * k; ctx.lineWidth = Math.max(2.5, R * .0095); ctx.strokeStyle = col(0, A * .9 * bump);
+  const segs = [[0, 1.15], [1.95, .55], [3.2, 1.45], [5.15, .4]]; ctx.beginPath();
+  for (const s of segs) { ctx.moveTo(cx + Math.cos(ring.c + s[0]) * rc, cy + Math.sin(ring.c + s[0]) * rc); ctx.arc(cx, cy, rc, ring.c + s[0], ring.c + s[0] + s[1]); }
+  ctx.stroke();
+  for (const s of segs) { const a = ring.c + s[0] + s[1]; sprite(glow[2], cx + Math.cos(a) * rc, cy + Math.sin(a) * rc, R * .07, A); }
+  // D — outer bezel: graduations, numerals, amber cursors
+  const rd = R * k; ctx.lineWidth = 1; ctx.strokeStyle = col(0, A * .3); ctx.beginPath(); ctx.arc(cx, cy, rd, 0, TAU); ctx.stroke();
+  ctx.strokeStyle = col(0, A * .55); ticks(rd, 120, R * .012, ring.d, 10, R * .03);
+  ctx.fillStyle = col(0, A * .75); ctx.font = `${Math.max(8, R * .026)}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  for (let i = 0; i < 12; i++) { const a = ring.d + i * TAU / 12, r = rd - R * .045; ctx.fillText(pad(i * 30, 3), cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+  ctx.textBaseline = 'alphabetic';
+  ctx.lineWidth = Math.max(3, R * .011); ctx.strokeStyle = col(1, A * .9); ctx.beginPath();
+  for (const s of [[0, .34], [Math.PI, .34]]) { const a0 = -ring.d * 2.2 + s[0]; ctx.moveTo(cx + Math.cos(a0) * rd, cy + Math.sin(a0) * rd); ctx.arc(cx, cy, rd, a0, a0 + s[1]); }
+  ctx.stroke();
+  // thinking: orbiting comet on the inner track
+  if (mix.think > .02) { const a = t * 5, r = R * .74; sprite(glow[1], cx + Math.cos(a) * r, cy + Math.sin(a) * r, R * .09, A * mix.think); sprite(glow[1], cx + Math.cos(a - .3) * r, cy + Math.sin(a - .3) * r, R * .05, A * mix.think * .6); }
+}
+
+function drawGyro(t, A) {                          // two tilted 3-D orbit rings with satellites
+  const specs = [[1.12, .0, ring.g1, 0, 0], [.5, .9, ring.g2, 1, 1]], r = R * .685 * lerp(.6, 1, intro), D = R * 3.4, N = 64;
+  for (let s = 0; s < specs.length; s++) {
+    const [ax, az, ay, c, ph] = specs[s], cxr = Math.cos(ax + Math.sin(t * .25 + s) * .12), sxr = Math.sin(ax + Math.sin(t * .25 + s) * .12), czr = Math.cos(az), szr = Math.sin(az), cyr = Math.cos(ay), syr = Math.sin(ay);
+    const proj = a => {
+      let x = Math.cos(a) * r, y = 0, z = Math.sin(a) * r;
+      let y1 = y * cxr - z * sxr, z1 = y * sxr + z * cxr; y = y1; z = z1;
+      let x2 = x * czr - y * szr, y2 = x * szr + y * czr; x = x2; y = y2;
+      let x3 = x * cyr + z * syr, z3 = -x * syr + z * cyr; const f = D / (D - z3);
+      return [cx + x3 * f, cy + y * f, z3];
+    };
+    for (let pass = 0; pass < 2; pass++) {
+      ctx.lineWidth = pass ? 1.5 : .8; ctx.strokeStyle = col(c, A * (pass ? .75 : .16)); ctx.beginPath();
+      let prev = proj(0);
+      for (let i = 1; i <= N; i++) { const p = proj(i * TAU / N); if (((p[2] + prev[2]) >= 0) === (pass === 1)) { ctx.moveTo(prev[0], prev[1]); ctx.lineTo(p[0], p[1]); } prev = p; }
+      ctx.stroke();
+    }
+    for (let k = 0; k < 2; k++) { const a = t * (.9 + s * .4) * (s ? -1 : 1) + k * Math.PI + ph, p = proj(a); sprite(glow[c], p[0], p[1], R * (p[2] > 0 ? .08 : .05), A * (p[2] > 0 ? 1 : .4)); }
+  }
+}
+
+function drawShocks(dt, A) {
+  for (let i = shocks.length - 1; i >= 0; i--) {
+    const s = shocks[i]; s.r += dt * .95; s.a -= dt * .55; if (s.a <= 0 || s.r > 1.1) { shocks.splice(i, 1); continue; }
+    ctx.lineWidth = 1.5 + s.a * 2; ctx.strokeStyle = col(s.c, s.a * A * .6); ctx.beginPath(); ctx.arc(cx, cy, s.r * R, 0, TAU); ctx.stroke();
+  }
+}
+
+function drawScan(t, dt, A) {
+  if (mix.scan < .01) return;
+  const M = mix.scan * A, r = R * .96; scanAng += dt * 2.6;
+  ctx.lineWidth = 1; ctx.strokeStyle = col(0, .22 * M); ctx.beginPath(); ctx.arc(cx, cy, r * .33, 0, TAU); ctx.arc(cx, cy, r * .66, 0, TAU); ctx.moveTo(cx - r, cy); ctx.lineTo(cx + r, cy); ctx.moveTo(cx, cy - r); ctx.lineTo(cx, cy + r); ctx.stroke();
+  if (ctx.createConicGradient) {
+    const wedge = 1.25, g = ctx.createConicGradient(scanAng - wedge, cx, cy), f = wedge / TAU;
+    g.addColorStop(0, col(0, 0)); g.addColorStop(f, col(0, .5 * M)); g.addColorStop(Math.min(.999, f + .0008), col(0, 0)); g.addColorStop(1, col(0, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+  } else { for (let i = 0; i < 14; i++) { ctx.fillStyle = col(0, .34 * M * (1 - i / 14)); ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, r, scanAng - (i + 1) * .09, scanAng - i * .09); ctx.fill(); } }
+  ctx.lineWidth = 2; ctx.strokeStyle = col(2, .9 * M); ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx + Math.cos(scanAng) * r, cy + Math.sin(scanAng) * r); ctx.stroke();
+  for (const b of blips) {
+    const d = Math.atan2(Math.sin(scanAng - b.a), Math.cos(scanAng - b.a)); if (d > 0 && d < .18) b.life = 1;
+    b.life = Math.max(0, b.life - dt * .55); if (b.life > 0) sprite(glow[1], cx + Math.cos(b.a) * b.r * r, cy + Math.sin(b.a) * b.r * r, R * .07, b.life * M);
+  }
+}
+
+function drawCallouts(A) {
+  const colW = W <= 1180 ? 300 : 344;
+  if (W < 1150 || cx0 + R * .78 + 84 > W - colW - 24) return;
+  ctx.font = `${Math.max(9, R * .028)}px ${MONO}`; ctx.textBaseline = 'bottom';
+  const items = [[-1, -1, 'SYS.LOAD', `${(38 + V.amp * 30 + Math.sin(perf.t * .7) * 4).toFixed(0)}%`], [1, -1, 'NODES', `${CITIES.length}/${CITIES.length} LINKED`],
+    [-1, 1, 'MIC.LVL', '▮'.repeat(Math.round(V.amp * 8)).padEnd(8, '▯')], [1, 1, 'CORE.OUT', `${(96.2 + V.amp * 3.4).toFixed(1)}%`]];
+  for (const [sx, sy, a, b] of items) {
+    const ang = Math.atan2(sy, sx), px = cx + Math.cos(ang) * R * 1.005, py = cy + Math.sin(ang) * R * 1.005, ex = px + sx * R * .07, ey = py + sy * R * .07, tx = ex + sx * R * .2, lx = ex + sx * 6;
+    ctx.strokeStyle = col(0, A * .5); ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ex, ey); ctx.lineTo(tx, ey); ctx.stroke();
+    ctx.fillStyle = col(1, A * .95); ctx.fillRect(px - 2, py - 2, 4, 4);
+    ctx.textAlign = sx < 0 ? 'right' : 'left'; ctx.fillStyle = col(1, A * .85); ctx.fillText(a, lx, ey - 3 - R * .03); ctx.fillStyle = col(2, A * .95); ctx.fillText(b, lx, ey - 2);
+  }
+  ctx.textBaseline = 'alphabetic';
+}
+
+function drawGlitch() {
+  if (glitchF <= 0) return; glitchF--;
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  const n = 3 + ((Math.random() * 4) | 0);
+  for (let i = 0; i < n; i++) {
+    const y = Math.random() * H, h = 4 + Math.random() * 46, dx = (Math.random() - .5) * 46;
+    ctx.drawImage(cv, 0, Math.max(0, y * DPR), cv.width, Math.min(h * DPR, cv.height - y * DPR), dx, y, W, h);
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = col(i % 2, .07); ctx.fillRect(0, y, W, h); ctx.globalCompositeOperation = 'source-over';
+  }
+}
+
+/* ───────────────────────── main loop ───────────────────────── */
+const perf = { t: 0, ema: 1 / 60, fps: 60, frames: 0, acc: 0, calm: 0, drops: 0, lastAdj: 0 };
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const raw = (now - last) / 1000; last = now; if (document.hidden || raw <= 0) return;
+  const dt = Math.min(raw, .05); perf.t += dt; const t = perf.t;
+  perf.ema += (Math.min(raw, .1) - perf.ema) * .05; perf.acc += raw; perf.frames++;
+  if (perf.acc >= .5) { perf.fps = perf.frames / perf.acc; perf.frames = 0; perf.acc = 0; fpsEl.textContent = Math.round(perf.fps); adaptQuality(t); }
+
+  // smoothed state
+  const f = 1 - Math.exp(-dt * 5);
+  mix.speak += ((flag.speaking ? 1 : 0) - mix.speak) * f; mix.hear += ((flag.hearing ? 1 : 0) - mix.hear) * f;
+  mix.think += ((flag.thinking ? 1 : 0) - mix.think) * f; mix.scan += ((flag.scanning ? 1 : 0) - mix.scan) * f;
+  alertMix += ((themeName === 'alert' ? 1 : 0) - alertMix) * f; spinBoost *= Math.exp(-dt * .6);
+  intro += (introTarget - intro) * (1 - Math.exp(-dt * 1.7));
+  mouse.x += (mouse.tx - mouse.x) * .05; mouse.y += (mouse.ty - mouse.y) * .05;
+  speedMul = 1 + mix.scan * 2.4 + mix.think * 1.3 + mix.speak * .5 + alertMix * .9 + spinBoost;
+  if (pT < 1) { pT = Math.min(1, pT + dt / .9); applyPalette(); }
+  updateVoice(dt, t);
+  cx = cx0 + mouse.x * 8; cy = cy0 + mouse.y * 5;
+
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0); ctx.clearRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  const A = clamp(.15 + .85 * intro, 0, 1);
+  drawFloor(t, A);
+  drawParticles(t, dt, A);
+  drawCore(t, A);
+  drawGlobe(t, dt, A);
+  drawReactor(t, A);
+  drawVoiceRing(t, A);
+  drawGyro(t, A);
+  drawRings(t, dt, A);
+  drawShocks(dt, A);
+  drawScan(t, dt, A);
+  drawCallouts(A);
+  ctx.globalAlpha = 1;
+  drawGlitch();
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  hudFrame(t);
+}
+/* Adaptive resolution: if the GPU/CPU can't hold ~45fps, trade pixels for smoothness. */
+function adaptQuality(t) {
+  if (LOCK_Q || t < 4 || t - perf.lastAdj < 5) return;
+  if (perf.ema > 1 / 42 && qi < QUAL.length - 1) { qi++; perf.drops++; perf.lastAdj = t; perf.calm = 0; resize(); }
+  else if (perf.ema < 1 / 57 && qi > 0 && perf.drops < 2) { if (++perf.calm > 12) { qi--; perf.calm = 0; perf.lastAdj = t; resize(); } }
+  else perf.calm = 0;
+}
+
+/* ───────────────────────── HUD: clock, meters, telemetry ───────────────────────── */
+const fpsEl = $('#fps'), stateEl = $('#state'), stateP = $('#stateP'), micP = $('#micP'), micS = $('#micS');
+const spark = $('#spark'), sctx = spark.getContext('2d'), sHist = new Float32Array(96).fill(.5); let sw = 0, sh = 0, sTick = 0;
+function sizeSpark() { const d = Math.min(devicePixelRatio || 1, 2); sw = spark.clientWidth || 268; sh = spark.clientHeight || 50; spark.width = sw * d; spark.height = sh * d; sctx.setTransform(d, 0, 0, d, 0, 0); }
+function drawSpark() {
+  sctx.clearRect(0, 0, sw, sh);
+  const c1 = `rgb(${P[0][0] | 0},${P[0][1] | 0},${P[0][2] | 0})`;
+  sctx.strokeStyle = 'rgba(120,180,200,.12)'; sctx.lineWidth = 1; sctx.beginPath();
+  for (let i = 1; i < 4; i++) { sctx.moveTo(0, i * sh / 4 + .5); sctx.lineTo(sw, i * sh / 4 + .5); } sctx.stroke();
+  const n = sHist.length, g = sctx.createLinearGradient(0, 0, 0, sh); g.addColorStop(0, `rgba(${P[0][0] | 0},${P[0][1] | 0},${P[0][2] | 0},.35)`); g.addColorStop(1, 'rgba(0,0,0,0)');
+  sctx.beginPath(); sctx.moveTo(0, sh);
+  for (let i = 0; i < n; i++) sctx.lineTo(i / (n - 1) * sw, sh - 3 - sHist[i] * (sh - 8));
+  sctx.lineTo(sw, sh); sctx.closePath(); sctx.fillStyle = g; sctx.fill();
+  sctx.beginPath(); for (let i = 0; i < n; i++) { const x = i / (n - 1) * sw, y = sh - 3 - sHist[i] * (sh - 8); i ? sctx.lineTo(x, y) : sctx.moveTo(x, y); }
+  sctx.strokeStyle = c1; sctx.lineWidth = 1.5; sctx.stroke();
+}
+let hudT = 0, pwrVal = 98.6;
+function hudFrame(t) {
+  if (t - hudT < .09) return; hudT = t;                                        // ~11 Hz for DOM-side widgets
+  pwrVal += (96.4 + V.amp * 3.3 + Math.sin(t * .8) * .35 - pwrVal) * .25;
+  if (++sTick % 2 === 0) { sHist.copyWithin(0, 1); sHist[sHist.length - 1] = clamp((pwrVal - 94) / 6.5, 0, 1); drawSpark(); $('#pwr').textContent = pwrVal.toFixed(1); }
+  if (scanRadar) drawRadar(t);
+}
+const meters = [...document.querySelectorAll('.mt')].map(m => ({ bar: m.querySelector('i'), val: m.querySelector('span') }));
+const mBase = [.42, .55, .7, .36];
+function updateMeters() {
+  const t = perf.t, vals = [
+    mBase[0] + .12 * Math.sin(t * .5) + V.amp * .3 + mix.scan * .25 + Math.random() * .04,
+    mBase[1] + .05 * Math.sin(t * .23) + Math.random() * .015,
+    mBase[2] + .14 * Math.sin(t * .9) + Math.random() * .05,
+    mBase[3] + .06 * Math.sin(t * .31) + V.amp * .12 + mix.scan * .1];
+  const txt = [v => `${(v * 100) | 0}%`, v => `${(v * 16).toFixed(1)}G`, v => `${(v * 940) | 0}M`, v => `${(28 + v * 44) | 0}°`];
+  vals.forEach((v, i) => { v = clamp(v, .04, .98); meters[i].bar.style.setProperty('--v', v.toFixed(3)); meters[i].val.textContent = txt[i](v); });
+}
+setInterval(updateMeters, 900);
+
+const logIn = $('#logIn'); let logMax = 34;
+function logLine(sub, txt, st = 'OK', cls = '') {
+  const d = new Date(), ln = document.createElement('div'); ln.className = 'ln new ' + cls;
+  ln.innerHTML = `<span class="ts">${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)}</span><span class="sub">${sub}</span><span class="tx">${esc(txt)}</span><span class="st">${st}</span>`;
+  logIn.appendChild(ln); while (logIn.children.length > logMax) logIn.removeChild(logIn.firstChild);
+  logIn.style.transition = 'none'; logIn.style.transform = 'translateY(15px)'; void logIn.offsetHeight;
+  logIn.style.transition = 'transform .16s linear'; logIn.style.transform = 'translateY(0)';
+}
+const logCmd = (txt, st = 'EXEC') => logLine('CMD ▸', txt, st, 'hot');
+const TEL = [
+  () => ['CORE.LATTICE', `${hex(4)}:${hex(4)} Φ=${rand(.92, 1.08).toFixed(3)}`, 'OK'],
+  () => ['NAV.GYRO', `x${sg()}${rand(0, .05).toFixed(3)} y${sg()}${rand(0, .05).toFixed(3)} z+${rand(.99, 1).toFixed(3)}`, 'OK'],
+  () => ['COMMS.UPLINK', `RSSI -${(rand(48, 76)) | 0}dBm SNR ${(rand(18, 34)) | 0}dB`, 'OK'],
+  () => ['SENSOR.ARRAY', `SWEEP ${(rand(0, 100)) | 0}% CONTACTS ${(rand(0, 4)) | 0}`, 'OK'],
+  () => ['NEURAL.NET', `${(rand(180, 460)) | 0} tok/s LOSS 0.0${(rand(10, 99)) | 0}`, 'OK'],
+  () => ['THERMAL', `${rand(31, 44).toFixed(1)}°C Δ${sg()}${rand(0, .8).toFixed(2)}`, 'OK'],
+  () => ['PKT.RX', `${hex(8)} ← ${(rand(10, 200)) | 0}.${(rand(0, 255)) | 0}.${(rand(0, 255)) | 0}.${(rand(1, 254)) | 0}`, 'ACK'],
+  () => ['AEGIS.MESH', `node ${pick(CITIES).code} sync ${(rand(1, 60)) | 0}ms`, 'SYNC'],
+  () => ['VOX.PROC', `lvl ${V.amp.toFixed(2)} f0 ${(rand(90, 240)) | 0}Hz`, flag.speaking ? 'TX' : 'RX'],
+  () => ['PWR.BUS', `${rand(11.8, 12.3).toFixed(2)}V ${rand(3.6, 5.1).toFixed(1)}A`, 'OK'],
+  () => ['MEM.ALLOC', `0x${hex(6)} +${(rand(1, 64)) | 0}KB`, 'OK'],
+  () => ['HOLO.PROJ', `frame ${(perf.t * 60) | 0} ${perf.fps.toFixed(0)}fps`, 'OK'],
+];
+const sg = () => Math.random() < .5 ? '-' : '+';
+function telLoop() { const [s, tx, st] = pick(TEL)(); logLine(s, tx, st, Math.random() < .03 ? 'hot' : ''); setTimeout(telLoop, rand(110, 250)); }
+
+const nodesEl = $('#nodes');
+nodesEl.innerHTML = CITIES.slice(0, 6).map(c => `<div class="nd"><b>${c.code}</b><div class="bar"><i></i></div><span>--</span></div>`).join('');
+function updateNodes() {
+  [...nodesEl.children].forEach((row, i) => {
+    const c = CITIES[i]; c.ms = clamp(c.ms + rand(-9, 9), 8, 160);
+    row.querySelector('span').textContent = `${c.ms | 0}ms`; row.querySelector('i').style.setProperty('--v', (1 - c.ms / 170).toFixed(2));
+  });
+}
+setInterval(updateNodes, 1200); updateNodes();
+
+const clkEl = $('#clk'), dteEl = $('#dte'), tickers = new Set();
+function clockTick() {
+  const d = new Date(); clkEl.textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  dteEl.textContent = d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase();
+  tickers.forEach(fn => fn(d));
+}
+setInterval(clockTick, 1000); clockTick();
+
+let stateKey = '';
+function refreshState() {
+  const k = flag.scanning ? 'SCANNING' : flag.speaking ? 'RESPONDING' : flag.thinking ? 'PROCESSING' : flag.hearing ? 'HEARING' : (wantRec && recOn) ? 'LISTENING' : 'STANDBY';
+  if (k !== stateKey) { stateKey = k; stateEl.textContent = k; stateP.classList.toggle('warn', k === 'RESPONDING' || k === 'SCANNING' || themeName === 'alert'); }
+}
+function updateMic() {
+  const btn = $('#mic');
+  if (!SR) { micS.textContent = 'N/A'; micP.className = 'pill off'; btn.className = 'na'; return; }
+  if (micBlocked) { micS.textContent = 'BLOCKED'; micP.className = 'pill warn'; btn.className = ''; return; }
+  const live = wantRec; micS.textContent = live ? (recOn ? 'LIVE' : '…') : 'OFF'; micP.className = 'pill' + (live ? '' : ' off'); btn.className = live ? 'on' : '';
+}
+
+/* ───────────────────────── text FX ───────────────────────── */
+function scramble(el, text, dur = 650) {
+  const glyphs = 'ABCDEF0123456789#%&/<>=+*', t0 = performance.now(), n = text.length;
+  (function step(now) {
+    const p = Math.min(1, (now - t0) / dur); let s = '';
+    for (let i = 0; i < n; i++) s += (i < p * n * 1.15 || text[i] === ' ') ? text[i] : glyphs[(Math.random() * glyphs.length) | 0];
+    el.textContent = s; if (p < 1) requestAnimationFrame(step); else el.textContent = text;
+  })(t0);
+}
+let typeTok = 0;
+function typeInto(el, text, dur) {
+  const tok = ++typeTok, t0 = performance.now(), n = text.length; el.textContent = '';
+  (function step(now) {
+    if (tok !== typeTok) return; const p = Math.min(1, (now - t0) / dur); el.textContent = text.slice(0, Math.ceil(n * p)); if (p < 1) requestAnimationFrame(step);
+  })(t0);
+}
+
+/* ───────────────────────── panels ───────────────────────── */
+const dock = $('#dock'), idle = $('#idle'), panels = new Map(), runTok = {};
+const maxPanels = () => innerWidth < 1000 ? 1 : 2;
+function openPanel(id, { tag, title, body }) {
+  if (panels.has(id)) closePanel(id, true);
+  for (let v; dock.querySelectorAll('.panel:not(.out)').length >= maxPanels() && (v = dock.querySelector('.panel:not(.out)')); ) { closePanel(v.dataset.id, true); v.remove(); }
+  const el = document.createElement('section'); el.className = 'panel in'; el.dataset.id = id;
+  el.innerHTML = `<i class="c a"></i><i class="c b"></i><i class="c d"></i><i class="c e"></i><div class="sw"></div>
+    <div class="ph"><h3></h3><span class="tag">${tag}</span><button class="x" aria-label="Close panel">×</button></div><div class="pb">${body}</div>`;
+  dock.appendChild(el); panels.set(id, el);
+  scramble(el.querySelector('h3'), title, 700);
+  el.querySelector('.x').onclick = () => closePanel(id);
+  triggerGlitch(6); syncIdle();
+  return el;
+}
+function beginRun(id, opts) { runTok[id] = (runTok[id] || 0) + 1; const el = openPanel(id, opts); return [el, runTok[id]]; }
+function closePanel(id, quick) {
+  const el = panels.get(id); if (!el) return; panels.delete(id); el.dataset.id = ''; runTok[id] = (runTok[id] || 0) + 1;
+  if (id === 'scan') { flag.scanning = false; scanRadar = null; }
+  if (id === 'time') tickers.delete(timeTick);
+  if (quick) { el.remove(); syncIdle(); return; }
+  el.classList.remove('in'); el.classList.add('out'); el.addEventListener('animationend', () => { el.remove(); syncIdle(); }, { once: true });
+  setTimeout(() => { if (el.isConnected) { el.remove(); syncIdle(); } }, 600);
+}
+function syncIdle() {
+  let hide = dock.querySelectorAll('.panel:not(.out)').length >= maxPanels() || innerWidth < 1000;
+  if (!hide) { idle.classList.remove('gone'); const room = $('#right').clientHeight - dock.offsetHeight - 12; hide = dock.children.length > 0 && room < idle.offsetHeight; }
+  idle.classList.toggle('gone', hide);
+}
+const conEl = $('#console'), setConH = () => document.documentElement.style.setProperty('--conH', conEl.offsetHeight + 'px');
+if (window.ResizeObserver) new ResizeObserver(() => { setConH(); syncIdle(); }).observe(conEl); setConH();
+function glitchEl(el) { el.classList.remove('gl'); void el.offsetWidth; el.classList.add('gl'); }
+const loading = msg => `<div class="load"><div class="ldr"></div><span>${msg}</span></div>`;
+const rv = (html, i = 0, tagN = 'div', cls = '') => `<${tagN} class="rv ${cls}" style="--i:${i}">${html}</${tagN}>`;
+
+/* ───────────────────────── speech output ───────────────────────── */
+const synth = window.speechSynthesis; let voice = null, muted = false, speaking = 0, chain = Promise.resolve(), gen = 0, curFinish = null, deafUntil = 0, lastSpoken = '';
+function pickVoice() {
+  if (!synth) return; const vs = synth.getVoices(); if (!vs.length) return;
+  const bad = /Bells|Boing|Bubbles|Cellos|Good News|Bad News|Jester|Organ|Superstar|Trinoids|Whisper|Wobble|Zarvox|Albert|Bahh|Junior|Kathy|Ralph|Fred|Grandma|Grandpa|Eddy|Flo|Reed|Rocko|Sandy|Shelley/i;
+  const en = vs.filter(v => /^en/i.test(v.lang) && !bad.test(v.name));
+  const prefs = [/Google UK English Male/i, /Daniel/i, /Arthur/i, /Oliver/i, /Microsoft (Ryan|George|Guy|Davis|Mark|David)/i, /Aaron|Alex/i, /Google UK English/i, /en[-_]GB/i, /Google US English/i, /en[-_]US/i];
+  for (const p of prefs) { const v = en.find(v => p.test(v.name) || p.test(v.lang)); if (v) { voice = v; return; } }
+  voice = en[0] || null;
+}
+if (synth) { pickVoice(); synth.addEventListener && synth.addEventListener('voiceschanged', pickVoice); }
+const estMs = s => Math.max(800, s.split(/\s+/).length * 330 + 300);
+function setSpeaking(on) {
+  flag.speaking = on; deafUntil = on ? Infinity : performance.now() + 900;
+  if (on) { flag.thinking = false; spawnShock(1, 1); } refreshState();
+}
+function speak(text) {
+  const my = gen; speaking++; setSpeaking(true); lastSpoken = (text || '').toLowerCase();
+  chain = chain.then(() => my === gen ? doSpeak(text) : null).catch(() => {}).then(() => { if (--speaking <= 0) { speaking = 0; setSpeaking(false); } });
+  return chain;
+}
+function doSpeak(text) {
+  return new Promise(res => {
+    let done = false, wd = 0; const est = estMs(text);
+    const fin = () => { if (done) return; done = true; curFinish = null; clearTimeout(wd); res(); };
+    curFinish = fin; wd = setTimeout(fin, est * 1.7 + 3000);
+    if (!synth || muted) { setTimeout(fin, est); return; }         // stay visually "speaking" even when silent
+    const u = new SpeechSynthesisUtterance(text); if (voice) { u.voice = voice; u.lang = voice.lang; }
+    u.rate = 1.03; u.pitch = .82; u.volume = 1; u.onboundary = () => { V.boundary = 1; }; u.onend = fin; u.onerror = fin;
+    setTimeout(() => { try { synth.speak(u); } catch (e) { fin(); } }, 40);
+  });
+}
+function cancelSpeech() { gen++; if (synth) try { synth.cancel(); } catch (e) {} if (curFinish) curFinish(); }
+async function respond(text, spoken = text) {              // animated response line + voice
+  typeInto($('#resp'), text, Math.min(estMs(spoken) * .85, 9000)); glitchEl($('#resp'));
+  return speak(spoken);
+}
+
+/* ───────────────────────── speech input ───────────────────────── */
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recOn = false, wantRec = false, micBlocked = false, restartT = 0; const restarts = [];
+function startRec() {
+  if (!SR || micBlocked) return;
+  if (!rec) {
+    rec = new SR(); rec.lang = 'en-US'; rec.continuous = true; rec.interimResults = true; rec.maxAlternatives = 1;
+    rec.onstart = () => { recOn = true; updateMic(); refreshState(); };
+    rec.onend = () => { recOn = false; flag.hearing = false; updateMic(); refreshState(); if (wantRec && !micBlocked) scheduleRestart(); };
+    rec.onspeechstart = () => { if (!flag.speaking) flag.hearing = true; refreshState(); };
+    rec.onspeechend = () => { flag.hearing = false; refreshState(); };
+    rec.onerror = e => {
+      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') { micBlocked = true; wantRec = false; showYou('Microphone access was blocked — use the command line, or allow the mic and press the mic button.', 'miss'); }
+      else if (e.error === 'audio-capture') { micBlocked = true; wantRec = false; showYou('No microphone detected — use the command line below.', 'miss'); }
+      else if (e.error === 'network') { showYou('Speech service unreachable — retrying…', 'miss'); }
+      updateMic();
+    };
+    rec.onresult = e => {
+      if (performance.now() < deafUntil) return;                     // ignore my own voice
+      let interim = '', fin = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) { const r = e.results[i]; (r.isFinal ? (fin += r[0].transcript) : (interim += r[0].transcript)); }
+      if (interim) { showYou(interim, 'interim'); V.userKick = 1; flag.hearing = true; }
+      if (fin) { flag.hearing = false; const txt = fin.trim(); if (isEcho(txt)) return; showYou(txt, ''); onUtterance(txt, false); }
+    };
+  }
+  try { rec.start(); } catch (e) { /* already started */ }
+}
+function scheduleRestart() {
+  const now = performance.now(); restarts.push(now); while (restarts.length && now - restarts[0] > 10000) restarts.shift();
+  const delay = restarts.length > 8 ? 4000 : 220; clearTimeout(restartT); restartT = setTimeout(() => { if (wantRec) startRec(); }, delay);
+}
+const isEcho = t => { t = t.toLowerCase().replace(/[^a-z0-9 ]/g, '').trim(); return t.length > 5 && lastSpoken.replace(/[^a-z0-9 ]/g, '').includes(t); };
+async function setMic(on) {
+  if (on && SR && !micBlocked) {
+    wantRec = true; updateMic();
+    if (!an) {
+      const r = await Promise.race([initMeter(), sleep(8000).then(() => 'timeout')]);
+      if (r === 'denied') { micBlocked = true; wantRec = false; showYou('Microphone access was blocked — use the command line, or allow the mic and press the mic button.', 'miss'); }
+    }
+    if (wantRec) startRec();
+  } else { wantRec = false; clearTimeout(restartT); if (rec) { try { rec.stop(); } catch (e) {} } stopMeter(); }
+  updateMic(); refreshState();
+}
+$('#mic').onclick = () => { if (!SR) { showYou('Voice input is not supported in this browser — type commands below.', 'miss'); return; } micBlocked = false; setMic(!wantRec); };
+$('#mute').onclick = () => { muted ? cmdUnmute() : cmdMute(); };
+function showYou(text, cls) { const y = $('#you'); y.textContent = text; y.className = cls; }
+
+/* ───────────────────────── location + weather ───────────────────────── */
+let fix = null;
+function getFix(timeout = 7000) {
+  return new Promise(res => {
+    if (fix) return res(fix); if (!navigator.geolocation) return res(null);
+    let d = false; const to = setTimeout(() => { if (!d) { d = true; res(null); } }, timeout + 600);
+    navigator.geolocation.getCurrentPosition(p => { if (d) return; d = true; clearTimeout(to); fix = { lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }; res(fix); },
+      () => { if (d) return; d = true; clearTimeout(to); res(null); }, { timeout, maximumAge: 600000 });
+  });
+}
+function setPin(lat, lon) { pin = { lat, lon, v: ll2v(lat, lon), t0: perf.t }; yawTarget = -lon * Math.PI / 180; tiltTarget = clamp(lat * Math.PI / 180, -.7, .9); }
+const fmtLL = (lat, lon) => `${Math.abs(lat).toFixed(2)}°${lat >= 0 ? 'N' : 'S'} ${Math.abs(lon).toFixed(2)}°${lon >= 0 ? 'E' : 'W'}`;
+const USF = /^en-US$/i.test(navigator.language || '');
+const deg = c => USF ? c * 9 / 5 + 32 : c;
+async function fetchWeather(f) {
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${f.lat.toFixed(3)}&longitude=${f.lon.toFixed(3)}&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m&hourly=temperature_2m&forecast_hours=12&timezone=auto`;
+  const ctl = new AbortController(), to = setTimeout(() => ctl.abort(), 6000);
+  try {
+    const r = await fetch(url, { signal: ctl.signal }); if (!r.ok) throw new Error('http ' + r.status);
+    const j = await r.json(), c = j.current;
+    return { live: true, t: c.temperature_2m, feels: c.apparent_temperature, rh: c.relative_humidity_2m, code: c.weather_code, day: c.is_day === 1, p: c.surface_pressure, wind: c.wind_speed_10m, dir: c.wind_direction_10m,
+      hourly: j.hourly.temperature_2m.slice(0, 12), hours: j.hourly.time.slice(0, 12).map(s => s.slice(11, 13)), lat: f.lat, lon: f.lon };
+  } finally { clearTimeout(to); }
+}
+function simWeather(f) {                       // clearly-labelled fallback when offline / no location
+  const d = new Date(), h = d.getHours() + d.getMinutes() / 60, at = x => 17 + 6 * Math.sin(TAU * (x - 9) / 24), doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5);
+  const code = [0, 1, 2, 3, 61, 0, 45, 80][doy % 8];
+  return { live: false, t: at(h), feels: at(h) - 1.2, rh: 58 + ((doy * 7) % 25), code, day: h > 6 && h < 19, p: 1008 + (doy % 15), wind: 8 + (doy % 13), dir: (doy * 47) % 360,
+    hourly: Array.from({ length: 12 }, (_, i) => at(h + i)), hours: Array.from({ length: 12 }, (_, i) => pad((d.getHours() + i) % 24)), lat: f ? f.lat : null, lon: f ? f.lon : null };
+}
+function wmo(c) {
+  if (c === 0) return ['Clear sky', 'clear']; if (c <= 2) return ['Partly cloudy', 'partly']; if (c === 3) return ['Overcast', 'cloud']; if (c <= 48) return ['Fog', 'fog'];
+  if (c <= 57) return ['Drizzle', 'rain']; if (c <= 67) return ['Rain', 'rain']; if (c <= 77) return ['Snow', 'snow']; if (c <= 82) return ['Rain showers', 'rain']; if (c <= 86) return ['Snow showers', 'snow']; return ['Thunderstorm', 'storm'];
+}
+const CLOUD = '<path d="M16 38h30a9 9 0 0 0 1.5-17.9A13 13 0 0 0 22.5 17.5 10.5 10.5 0 0 0 16 38z"/>';
+function wxIcon(kind, day) {
+  const sun = `<g class="o spin"><circle cx="32" cy="24" r="8"/>${Array.from({ length: 8 }, (_, i) => { const a = i * Math.PI / 4; return `<path d="M${(32 + Math.cos(a) * 13).toFixed(1)} ${(24 + Math.sin(a) * 13).toFixed(1)}L${(32 + Math.cos(a) * 18).toFixed(1)} ${(24 + Math.sin(a) * 18).toFixed(1)}"/>`; }).join('')}</g>`;
+  const moon = '<path class="o" d="M40 12a15 15 0 1 0 12 24A13 13 0 0 1 40 12z" transform="translate(-8 4)"/>';
+  const cl = `<g class="drift">${CLOUD}</g>`;
+  switch (kind) {
+    case 'clear': return `<svg viewBox="0 0 64 48">${day ? sun : moon}</svg>`;
+    case 'partly': return `<svg viewBox="0 0 64 48"><g transform="translate(10 -6) scale(.7)">${day ? sun : moon}</g>${cl}</svg>`;
+    case 'cloud': return `<svg viewBox="0 0 64 48">${cl}</svg>`;
+    case 'fog': return `<svg viewBox="0 0 64 48"><g class="drift">${CLOUD}</g><path class="o drift" d="M14 42h36M20 46h28"/></svg>`;
+    case 'rain': return `<svg viewBox="0 0 64 48">${cl}<path class="fall o" d="M22 40v4"/><path class="fall o" d="M32 40v4"/><path class="fall o" d="M42 40v4"/></svg>`;
+    case 'snow': return `<svg viewBox="0 0 64 48">${cl}<circle class="fall o" cx="22" cy="42" r="1"/><circle class="fall o" cx="32" cy="42" r="1"/><circle class="fall o" cx="42" cy="42" r="1"/></svg>`;
+    default: return `<svg viewBox="0 0 64 48">${cl}<path class="o zap" d="M33 30l-6 9h6l-3 8 9-11h-6l3-6z"/></svg>`;
+  }
+}
+function wxChart(d) {
+  const h = d.hourly.map(deg), lo = Math.min(...h), hi = Math.max(...h), sp = Math.max(1, hi - lo), X = i => 8 + i * 284 / (h.length - 1), Y = v => 58 - (v - lo) / sp * 40;
+  const pts = h.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`), iMax = h.indexOf(hi), iMin = h.indexOf(lo);
+  return `<svg class="wx-chart" viewBox="0 0 300 76"><defs><linearGradient id="wg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgb(var(--c1))" stop-opacity=".3"/><stop offset="1" stop-color="rgb(var(--c1))" stop-opacity="0"/></linearGradient></defs>
+    <path d="M${pts.join('L')}L292,62L8,62Z" fill="url(#wg)"/><path class="ln1" d="M${pts.join('L')}"/>
+    ${[iMax, iMin].map(i => `<circle cx="${X(i).toFixed(1)}" cy="${Y(h[i]).toFixed(1)}" r="2.6" fill="rgb(var(--c2))"/><text x="${X(i).toFixed(1)}" y="${(Y(h[i]) - 7).toFixed(1)}" text-anchor="${i === 0 ? 'start' : i === h.length - 1 ? 'end' : 'middle'}" style="fill:rgb(var(--c2))">${Math.round(h[i])}°</text>`).join('')}
+    <text x="8" y="73">${d.hours[0]}:00</text><text x="150" y="73" text-anchor="middle">NEXT 12 H</text><text x="292" y="73" text-anchor="end">${d.hours[h.length - 1]}:00</text></svg>`;
+}
+function renderWeather(el, d) {
+  const [desc, kind] = wmo(d.code), wu = USF ? 'mph' : 'km/h', ws = USF ? d.wind * .621 : d.wind;
+  el.querySelector('.pb').innerHTML =
+    rv(`<div class="wx-ico">${wxIcon(kind, d.day)}</div><div class="wx-t"><b>${Math.round(deg(d.t))}</b><sup>°${USF ? 'F' : 'C'}</sup><small>${desc} · feels ${Math.round(deg(d.feels))}°</small></div>`, 0, 'div', 'wx-main') +
+    rv(`<div><label>HUMIDITY</label><span>${Math.round(d.rh)}%</span></div><div><label>WIND</label><span>${Math.round(ws)} ${wu}<svg viewBox="0 0 12 12" style="transform:rotate(${(d.dir + 180) % 360}deg)"><path d="M6 1v10M2.5 4.5 6 1l3.5 3.5"/></svg></span></div>
+       <div><label>PRESSURE</label><span>${Math.round(d.p)} hPa</span></div><div><label>POSITION</label><span>${d.lat == null ? 'UNKNOWN' : fmtLL(d.lat, d.lon)}</span></div>`, 1, 'div', 'wx-grid') +
+    rv(wxChart(d), 2) + rv(d.live ? `SRC <b>LIVE</b> · OPEN-METEO` : `SRC <b>SIMULATED</b> · NO LIVE FEED`, 3, 'div', 'src');
+  glitchEl(el.querySelector('.wx-t b')); triggerGlitch(5); syncIdle();
+}
+
+/* ───────────────────────── command handlers ───────────────────────── */
+const part = () => { const h = new Date().getHours(); return h < 5 ? 'evening' : h < 12 ? 'morning' : h < 18 ? 'afternoon' : 'evening'; };
+
+async function cmdWeather() {
+  logCmd('WX.QUERY');
+  const [el, my] = beginRun('wx', { tag: 'WX-01', title: 'ATMOSPHERIC SURVEY', body: loading('ACQUIRING POSITION FIX') });
+  const ack = respond('Pulling atmospheric data.');
+  const f = await getFix(7000); if (my !== runTok.wx || !el.isConnected) return;
+  let d = null;
+  if (f) { el.querySelector('.load span').textContent = 'QUERYING WEATHER FEED'; try { d = await fetchWeather(f); } catch (e) { d = null; } }
+  if (my !== runTok.wx || !el.isConnected) return;
+  const live = !!d; if (!d) d = simWeather(f);
+  renderWeather(el, d); if (f) setPin(f.lat, f.lon);
+  logLine('WX.FEED', live ? `live ${fmtLL(f.lat, f.lon)}` : 'simulated fallback', live ? 'OK' : 'WARN', live ? 'hot' : '');
+  await ack; if (my !== runTok.wx) return;
+  const [desc] = wmo(d.code), T = Math.round(deg(d.t)), unit = USF ? 'Fahrenheit' : 'Celsius', ws = Math.round(USF ? d.wind * .621 : d.wind);
+  const pre = live ? '' : (f ? 'The live weather feed is unreachable, so this is simulated data. ' : 'I can’t get a location fix or a live feed, so this is simulated data. ');
+  return respond(`${pre}It’s ${T} degrees ${unit} and ${desc.toLowerCase()}. Humidity ${Math.round(d.rh)} percent, wind ${ws} ${USF ? 'miles' : 'kilometres'} per hour.`,
+    `${pre}It is ${T} degrees ${unit} and ${desc.toLowerCase()}. Humidity ${Math.round(d.rh)} percent, wind ${ws} ${USF ? 'miles' : 'kilometres'} per hour.`);
+}
+
+async function cmdDiag() {
+  logCmd('DIAG.RUN');
+  const batt = navigator.getBattery ? await navigator.getBattery().catch(() => null) : null, jitter = (a, b) => Math.round(rand(a, b) * 10) / 10;
+  const rows = [
+    { n: 'AETHER CORE', run: () => { const v = jitter(97.4, 99.8); return { p: v, t: `${v}%` }; } },
+    { n: 'RENDER PIPELINE', run: () => ({ p: clamp(perf.fps / 60, 0, 1) * 100, t: `${Math.round(perf.fps)} FPS`, w: perf.fps < 30 }) },
+    { n: 'VOICE INPUT', run: () => !SR ? { p: 12, t: 'UNSUPPORTED', w: true } : micBlocked ? { p: 20, t: 'BLOCKED', w: true } : { p: 100, t: wantRec ? 'ONLINE' : 'READY' } },
+    { n: 'SPEECH SYNTH', run: () => !synth ? { p: 12, t: 'UNSUPPORTED', w: true } : { p: 100, t: (n => n === 0 ? 'READY' : n === 1 ? '1 VOICE' : `${n} VOICES`)(synth.getVoices().length) } },
+    { n: 'MEMORY', run: () => { const m = performance.memory; if (m) return { p: 100 - m.usedJSHeapSize / m.jsHeapSizeLimit * 100, t: `${(m.usedJSHeapSize / 1048576) | 0} MB` }; return { p: 96, t: navigator.deviceMemory ? `${navigator.deviceMemory} GB` : 'NOMINAL' }; } },
+    { n: 'POWER GRID', run: () => batt ? { p: batt.level * 100, t: `${Math.round(batt.level * 100)}%${batt.charging ? ' CHG' : ''}`, w: batt.level < .2 && !batt.charging } : { p: 100, t: 'STABLE' } },
+    { n: 'NEURAL LATTICE', run: () => { const v = jitter(95, 99.5); return { p: v, t: `${v}%` }; } },
+    { n: 'COMMS UPLINK', run: () => { const c = navigator.connection; return navigator.onLine ? { p: 100, t: c && c.rtt ? `${c.rtt} ms` : 'ONLINE' } : { p: 8, t: 'OFFLINE', w: true }; } },
+  ];
+  const [el, my] = beginRun('dx', { tag: 'DX-07', title: 'SYSTEM DIAGNOSTICS', body: rows.map((r, i) => rv(`<span class="n">${r.n}</span><div class="bar"><i style="--v:0"></i></div><span class="v">···</span>`, i, 'div', 'dg')).join('') + rv(`<span>OVERALL</span><b id="dxr">RUNNING</b>`, 9, 'div', 'dgf') });
+  const ack = respond('Running full system diagnostics.');
+  let ok = 0; const bad = [];
+  for (let i = 0; i < rows.length; i++) {
+    await sleep(430); if (my !== runTok.dx || !el.isConnected) return;
+    const r = rows[i].run(), row = el.querySelectorAll('.dg')[i];
+    row.querySelector('.bar i').style.setProperty('--v', (clamp(r.p, 4, 100) / 100).toFixed(2)); row.querySelector('.v').textContent = r.t; row.classList.add(r.w ? 'warn' : 'ok');
+    r.w ? bad.push(rows[i].n) : ok++; logLine('DIAG', `${rows[i].n.toLowerCase()} ${r.t}`, r.w ? 'WARN' : 'PASS', r.w ? 'hot' : ''); if (r.w) glitchEl(row);
+  }
+  const res = el.querySelector('#dxr'); res.textContent = `${ok}/${rows.length} NOMINAL`; res.className = bad.length ? '' : 'ok'; glitchEl(res); spawnShock(1.2, 0);
+  await ack; if (my !== runTok.dx) return;
+  const fp = Math.round(perf.fps);
+  return respond(bad.length ? `Diagnostics complete. ${ok} of ${rows.length} subsystems nominal. Attention: ${bad.join(' and ').toLowerCase()}.` : `Diagnostics complete. All ${rows.length} subsystems nominal. Rendering at ${fp} frames per second.`);
+}
+
+let scanRadar = null;
+function drawRadar(t) {
+  const c = scanRadar; if (!c || !c.isConnected) return; const g = c.getContext('2d'), s = c.width, r = s / 2 - 4, m = s / 2; g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, s, s);
+  const a1 = `rgb(${P[0][0] | 0},${P[0][1] | 0},${P[0][2] | 0})`, a2 = `rgb(${P[1][0] | 0},${P[1][1] | 0},${P[1][2] | 0})`;
+  g.strokeStyle = `rgba(${P[0][0] | 0},${P[0][1] | 0},${P[0][2] | 0},.35)`; g.lineWidth = 1; g.beginPath(); [1, .66, .33].forEach(k => { g.moveTo(m + r * k, m); g.arc(m, m, r * k, 0, TAU); }); g.moveTo(m - r, m); g.lineTo(m + r, m); g.moveTo(m, m - r); g.lineTo(m, m + r); g.stroke();
+  const a = t * 2.6; for (let i = 0; i < 16; i++) { g.fillStyle = `rgba(${P[0][0] | 0},${P[0][1] | 0},${P[0][2] | 0},${.3 * (1 - i / 16)})`; g.beginPath(); g.moveTo(m, m); g.arc(m, m, r, a - (i + 1) * .08, a - i * .08); g.fill(); }
+  g.strokeStyle = a1; g.lineWidth = 1.6; g.beginPath(); g.moveTo(m, m); g.lineTo(m + Math.cos(a) * r, m + Math.sin(a) * r); g.stroke();
+  (c._b || []).forEach(b => { const age = t - b.t0; if (age < 0) return; const k = Math.max(.25, 1 - ((t * 2.6 - b.a) % TAU + TAU) % TAU / TAU); g.fillStyle = a2; g.globalAlpha = k; g.beginPath(); g.arc(m + Math.cos(b.a) * b.r * r, m + Math.sin(b.a) * b.r * r, 2.6, 0, TAU); g.fill(); g.globalAlpha = 1; });
+}
+async function cmdScan() {
+  logCmd('SYS.SCAN');
+  let mic = 'UNKNOWN'; try { mic = (await navigator.permissions.query({ name: 'microphone' })).state.toUpperCase(); } catch (e) {}
+  const batt = navigator.getBattery ? await navigator.getBattery().catch(() => null) : null, con = navigator.connection, cores = navigator.hardwareConcurrency || 0, mem = navigator.deviceMemory;
+  const plat = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || 'UNKNOWN', tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const items = [
+    ['PLATFORM', String(plat).toUpperCase()], ['LOGICAL CORES', cores ? String(cores) : 'N/A'], ['MEMORY', mem ? `${mem}${mem >= 8 ? '+' : ''} GB` : 'N/A'],
+    ['DISPLAY', `${screen.width}×${screen.height} @${(devicePixelRatio || 1).toFixed(1)}x`], ['LOCALE', `${navigator.language || '—'} · ${tz.split('/').pop().replace(/_/g, ' ')}`],
+    ['NETWORK', navigator.onLine ? (con ? `${(con.effectiveType || 'ONLINE').toUpperCase()}${con.downlink ? ' · ' + con.downlink + ' Mbps' : ''}` : 'ONLINE') : 'OFFLINE'],
+    ['POWER', batt ? `${Math.round(batt.level * 100)}% · ${batt.charging ? 'CHARGING' : 'ON BATTERY'}` : 'N/A'], ['AUDIO IN', SR ? mic : 'NO SPEECH API'], ['ANOMALIES', '0 DETECTED'],
+  ];
+  const [el, my] = beginRun('scan', { tag: 'SC-03', title: 'ENVIRONMENT SCAN', body: `<div class="scn"><canvas width="132" height="132"></canvas><div class="sl"></div></div>` });
+  scanRadar = el.querySelector('canvas'); scanRadar._b = []; const list = el.querySelector('.sl');
+  flag.scanning = true; refreshState(); introBoost(); const beam = $('#beam'); beam.classList.remove('go'); void beam.offsetWidth; beam.classList.add('go');
+  CITIES.forEach((c, i) => setTimeout(() => { c.ping = 1; }, 300 + i * 260));
+  const ack = respond('Initiating system scan.');
+  for (let i = 0; i < items.length; i++) {
+    await sleep(430); if (my !== runTok.scan || !el.isConnected) return;
+    const d = document.createElement('div'); d.innerHTML = `<label>${esc(items[i][0])}</label><span>${esc(items[i][1])}</span>`; if (/OFFLINE|DENIED|NO SPEECH/.test(items[i][1])) d.className = 'w'; list.appendChild(d);
+    scanRadar._b.push({ a: rand(0, TAU), r: rand(.25, .92), t0: perf.t }); logLine('SCAN', `${items[i][0].toLowerCase()} ${items[i][1].toLowerCase()}`, 'DONE', 'hot');
+  }
+  await sleep(500); if (my !== runTok.scan || !el.isConnected) return;
+  flag.scanning = false; refreshState(); spawnShock(1.3, 0); triggerGlitch(6); await ack; if (my !== runTok.scan) return;
+  const netTxt = navigator.onLine ? 'network link stable' : 'network link down';
+  return respond(`System scan complete. ${cores ? cores + ' logical cores, ' : ''}${mem ? mem + ' gigabytes of memory, ' : ''}${netTxt}. No anomalies detected.`);
+}
+function introBoost() { spinBoost = 2.2; }
+
+let timeTick = () => {};
+async function cmdTime() {
+  logCmd('CLOCK.QUERY'); const d = new Date();
+  const doy = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 864e5), tz = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+  const fmt = dd => `<b>${pad(dd.getHours())}:${pad(dd.getMinutes())}<em>${pad(dd.getSeconds())}</em></b>`;
+  const el = openPanel('time', { tag: 'TM-02', title: 'CHRONOMETER', body: rv(`<div id="tmB">${fmt(d)}</div><p>${d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><small>${tz} · DAY ${doy} · UNIX <span id="tmU">${Math.floor(d / 1000)}</span></small>`, 0, 'div', 'tm') });
+  timeTick = dd => { const b = el.querySelector('#tmB'), u = el.querySelector('#tmU'); if (b) b.innerHTML = fmt(dd); if (u) u.textContent = Math.floor(dd / 1000); }; tickers.add(timeTick);
+  const t12 = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }), day = d.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+  return respond(`It’s ${t12}, ${day}.`, `It is ${t12}, ${day}.`);
+}
+async function cmdLocate() {
+  logCmd('GEO.LOCATE');
+  const [el, my] = beginRun('loc', { tag: 'GL-04', title: 'POSITION FIX', body: loading('TRIANGULATING') }); const ack = respond('Acquiring your position.');
+  const f = await getFix(9000); if (my !== runTok.loc || !el.isConnected) return; await ack;
+  if (!f) { el.querySelector('.pb').innerHTML = rv(`<div class="load"><span>NO FIX — LOCATION DENIED OR UNAVAILABLE</span></div>`); return respond('I couldn’t get a position fix. Location access was denied or unavailable.'); }
+  setPin(f.lat, f.lon);
+  el.querySelector('.pb').innerHTML = rv(`<div><label>LATITUDE</label><span>${f.lat.toFixed(4)}°</span></div><div><label>LONGITUDE</label><span>${f.lon.toFixed(4)}°</span></div><div><label>ACCURACY</label><span>±${Math.round(f.acc)} m</span></div><div><label>GRID</label><span>${fmtLL(f.lat, f.lon)}</span></div>`, 0, 'div', 'wx-grid');
+  glitchEl(el.querySelector('.pb')); triggerGlitch(6);
+  return respond(`Position locked: ${fmtLL(f.lat, f.lon)}.`, `Position locked. ${Math.abs(f.lat).toFixed(1)} degrees ${f.lat >= 0 ? 'north' : 'south'}, ${Math.abs(f.lon).toFixed(1)} degrees ${f.lon >= 0 ? 'east' : 'west'}.`);
+}
+async function cmdGlobe() { logCmd('GLOBE.VIEW'); spinBoost = 2.4; CITIES.forEach((c, i) => setTimeout(() => { c.ping = 1; }, i * 140)); spawnShock(1.2, 0); triggerGlitch(5); return respond(`Planetary view engaged. ${CITIES.length} nodes online.`); }
+async function cmdHelp() {
+  logCmd('HELP');
+  const rows = [['show weather', 'local conditions'], ['run diagnostics', 'subsystem health'], ['scan system', 'environment sweep'], ['locate me', 'pin your position'], ['what time is it', 'clock + date'], ['red alert / stand down', 'switch palette'], ['globe', 'planetary view'], ['clear panels', 'dismiss all'], ['mute / unmute', 'voice output']];
+  const el = openPanel('help', { tag: 'HL-00', title: 'COMMAND INDEX', body: `<div class="hl">${rows.map((r, i) => rv(`<b>${r[0].toUpperCase()}</b><span>${r[1]}</span>`, i, 'button')).join('')}</div>` });
+  el.querySelectorAll('.hl button').forEach((b, i) => b.onclick = () => onUtterance(rows[i][0].split(' / ')[0], true));
+  return respond('I can show weather, run diagnostics, scan the system, locate you on the globe, tell the time, or switch to alert mode. Just say the word.');
+}
+async function cmdAlert() { logCmd('ALERT.MODE', 'ARMED'); setTheme('alert'); spawnShock(1.4, 1); triggerGlitch(10); refreshState(); return respond('Alert mode engaged. All systems at combat readiness.'); }
+async function cmdNormal() { logCmd('ALERT.MODE', 'CLEAR'); setTheme('normal'); spawnShock(1, 0); triggerGlitch(6); refreshState(); return respond('Standing down. Returning to normal operations.'); }
+async function cmdClear() { logCmd('UI.CLEAR', 'OK'); [...panels.keys()].forEach(id => closePanel(id)); return respond('Display cleared.'); }
+function cmdMute() { muted = true; cancelSpeech(); $('#mute').classList.add('on'); $('#mute .w').style.display = 'none'; typeInto($('#resp'), 'Voice output muted. I’ll keep responding on screen.', 600); logCmd('VOICE.OUT', 'MUTED'); }
+function cmdUnmute() { muted = false; $('#mute').classList.remove('on'); $('#mute .w').style.display = ''; return respond('Voice output restored.'); }
+const cmdWho = () => respond('I’m Kestrel, a holographic tactical assistant. I run entirely in your browser.');
+const cmdHow = () => respond(`All systems nominal. Core output ${pwrVal.toFixed(1)} percent, rendering at ${Math.round(perf.fps)} frames per second.`);
+const cmdThanks = () => respond(pick(['Always.', 'Happy to help.', 'Any time.']));
+const cmdHello = () => respond(`Good ${part()}. All systems standing by.`);
+
+const RULES = [
+  [/\b(unmute|voice on|sound on|talk again)\b/, cmdUnmute],
+  [/\b(mute|be quiet|silence|shut up|stop talking)\b/, cmdMute],
+  [/\b(clear|close|dismiss|hide|reset)\b.*\b(panels?|screen|display|windows?|all|everything)\b|^(clear|dismiss|close it|close)$/, cmdClear],
+  [/\b(red alert|alert mode|combat mode|battle stations|code red|threat)\b/, cmdAlert],
+  [/\b(stand ?down|all clear|normal mode|cancel alert|blue mode|cyan mode|end alert|at ease)\b/, cmdNormal],
+  [/\b(weather|forecast|temperature|climate|raining|how (hot|cold|warm) is it)\b/, cmdWeather],
+  [/\b(diagnos\w*|self ?test|health check|system check|run (a )?checks?)\b/, cmdDiag],
+  [/\b(scan|sweep|sensors?|recon|survey)\b/, cmdScan],
+  [/\b(locate|where am i|my location|position fix|find me)\b/, cmdLocate],
+  [/\b(globe|planet|planetary|earth|world map)\b/, cmdGlobe],
+  [/\b(time|clock|date|what day)\b/, cmdTime],
+  [/\b(help|commands?|what can you do|options|capabilities)\b/, cmdHelp],
+  [/\b(who are you|your name|what are you|introduce yourself)\b/, cmdWho],
+  [/\b(status|how are you|are you (ok|okay|there|online|alive))\b/, cmdHow],
+  [/\b(thank(s| you)|cheers|good (job|work)|well done)\b/, cmdThanks],
+  [/^(hello|hi|hey|yo|good (morning|afternoon|evening))\b/, cmdHello],
+];
+const WAKE = /^(?:(?:hey|ok|okay)\s+)?(?:kest?rel|kestral|castrel|chestrel|kes\s?trel|cast\s?rel|kessel)\b[,.:!\s]*/i;
+async function onUtterance(raw, typed) {
+  let text = raw.toLowerCase().replace(/[^a-z0-9' ]+/g, ' ').replace(/\s+/g, ' ').trim(); if (!text) return;
+  const addressed = WAKE.test(text) || typed; text = text.replace(WAKE, '').replace(/^(please|can you|could you|would you|kindly)\s+/, '').trim() || 'hello';
+  const rule = RULES.find(r => r[0].test(text));
+  if (!rule) {
+    logLine('VOX.PROC', `no match: ${text.slice(0, 22)}`, 'IGN'); if (!typed) showYou(raw, 'miss');
+    if (addressed) { flag.thinking = false; cancelSpeech(); return respond('I don’t have a protocol for that. Say “help” for the command index.'); } return;
+  }
+  cancelSpeech(); flag.thinking = true; refreshState(); setTimeout(() => { flag.thinking = false; refreshState(); }, 1600);
+  spawnShock(1, 0); triggerGlitch(7); V.userKick = 1; if (typed) showYou(raw, '');
+  try { return await rule[1](); } catch (err) { console.error(err); logLine('ERR', String(err.message || err).slice(0, 28), 'FAIL', 'hot'); }
+}
+
+/* console input + chips */
+$('#cf').addEventListener('submit', e => { e.preventDefault(); const i = $('#cmd'), v = i.value.trim(); if (v) { i.value = ''; onUtterance(v, true); } });
+document.querySelectorAll('.chips button').forEach(b => b.onclick = () => onUtterance(b.dataset.cmd, true));
+addEventListener('keydown', e => { if (e.key === '/' && document.activeElement !== $('#cmd')) { e.preventDefault(); $('#cmd').focus(); } });
+
+/* ───────────────────────── boot ───────────────────────── */
+async function boot() {
+  $('#boot').classList.add('go'); document.body.classList.add('booted'); introTarget = 1;
+  ['#top', '#console'].forEach((s, i) => { const el = $(s); el.style.animationDelay = `${i * .15}s`; el.classList.add('hud-in'); });
+  document.querySelectorAll('#left .panel,#idle').forEach(p => p.classList.add('in'));
+  triggerGlitch(12); spawnShock(1.5, 0); spawnShock(1, 1);
+  const lines = [['BOOT', 'aether core ignition', 'OK'], ['BOOT', 'holo projector calibrated', 'OK'], ['BOOT', 'voice subsystem armed', SR ? 'OK' : 'N/A'], ['BOOT', 'neural lattice online', 'OK'], ['KESTREL', 'all systems nominal', 'READY']];
+  lines.forEach((l, i) => setTimeout(() => logLine(l[0], l[1], l[2], i === lines.length - 1 ? 'hot' : ''), 200 + i * 260));
+  telLoop(); updateMic(); syncIdle();
+  if (SR) await setMic(true); else updateMic();
+  await sleep(300);
+  const g = `Good ${part()}. Kestrel online. All systems nominal. ${SR ? 'Say a command, or type one below.' : 'Voice input is unavailable in this browser, so use the command line.'}`;
+  respond(g);
+}
+$('#go').onclick = boot;
+
+resize(); requestAnimationFrame(frame);
+window.__kestrel = { command: t => onUtterance(t, true), perf, get quality() { return qi; }, flag, V };
+})();
+</script>
+</body>
+</html>
